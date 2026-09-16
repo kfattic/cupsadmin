@@ -29,6 +29,10 @@ Private maintainer notes, if present, are in `CLAUDE.local.md` (gitignored).
 - **Queue defaults are written with `lpadmin -p <queue> -o key=value`** (into the queue's PPD /
   printers.conf, for every user) — never `lpoptions`. `~/.cups/lpoptions` is only read, to point out
   a per-user override.
+- **Driver filter check** (`DriverFilters.swift`): resolves each `*cupsFilter`/`*cupsFilter2` program
+  (bare names under `/usr/libexec/cups/filter`, skipping `maxsize(n)` and `-`) and reads its Mach-O header
+  directly — any arm64 CPU type counts as native, including subtypes `lipo` can't name. Intel-only →
+  "Driver needs Rosetta"; not found → "Driver filter missing" (shown first).
 - **PPD options** keep their `*OpenGroup`, UI type and `*ParamCustom` type/range. Custom values are
   written as `Custom.<value>` and quoted when they contain spaces (unquoted, `lpadmin` silently truncates).
 - **Quick actions** are vendor-neutral. `QuickActions.swift` defines the actions; what each writes comes

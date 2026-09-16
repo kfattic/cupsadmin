@@ -28,6 +28,7 @@ let usage = """
     usage: cupsadmin <command> [args]
 
       printers                   all queues: state, reasons, accepting, shared, device URI
+      printers --rosetta         only queues whose driver filters are Intel-only or missing
       printer <queue> [--all]    one queue in detail (--all dumps every IPP attribute)
       jobs [queue] [--completed | --all-jobs]
                                  active jobs (all queues unless one is given)
@@ -80,9 +81,10 @@ func runCommand(_ args: [String]) async throws -> String {
         return "OK: help"
 
     case "printers":
+        let rosetta = takeFlag("--rosetta")
         try rejectUnknownFlags()
         guard rest.isEmpty else { throw CupsAdminError.usage("printers takes no arguments") }
-        return try await PrintersCommand.run(client: client)
+        return rosetta ? try await RosettaCommand.run(client: client) : try await PrintersCommand.run(client: client)
 
     case "printer":
         let dumpAll = takeFlag("--all")

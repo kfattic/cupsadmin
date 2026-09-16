@@ -100,8 +100,51 @@ enum PrinterCommand {
                                         : label + ":" + String(repeating: " ", count: width - label.count)
             print("\(heading)  \(value)")
         }
+        if let ppdText = try? await client.getPPD(queue: queue),
+           let warning = DriverFilterCheck.check(PPD(text: ppdText)).warning {
+            print("\nWARNING: \(warning)")
+        }
         print("\n(use --all for every attribute)")
 
         return "OK: \(queue) \(Format.printerState(p.int("printer-state"))), reasons \(Format.reasons(p.strings("printer-state-reasons")))"
+    }
+}
+
+/// `printers --rosetta`: queues whose PPD filters have no arm64 slice or don't exist.
+enum RosettaCommand {
+    static func run(client: CupsClient) async throws -> String {
+        let printers = try await client.getPrinters(requested: ["printer-name"])
+        let names = printers.compactMap { $0.string("printer-name") }
+            .sorted { $0.localizedStandardCompare($1) == .orderedAscending }
+
+        var rows: [[String]] = []
+        var affected = 0
+        for name in names {
+            guard let text = try await client.getPPD(queue: name) else { continue }
+            let report = DriverFilterCheck.check(PPD(text: text))
+            guard report.isFlagged else { continue }
+            affected += 1
+            let flagged = report.missing + report.intelOnly
+            for (i, filter) in flagged.enumerated() {
+                let what: String
+                switch filter.status {
+                case .intelOnly(let archs): what = archs.joined(separator: " ")
+                case .missing: what = "missing"
+                default: what = ""
+                }
+                rows.append([i == 0 ? name : "", i == 0 ? (report.headline ?? "") : "", what, filter.path ?? filter.program])
+            }
+        }
+
+        let host = DriverFilterCheck.hostIsAppleSilicon
+            ? "Apple silicon, Rosetta \(DriverFilterCheck.rosettaInstalled ? "installed" : "NOT installed")"
+            : "Intel Mac (Intel-only filters run natively here)"
+        if rows.isEmpty {
+            print("No queues need Rosetta or have missing driver filters. This Mac: \(host).")
+            return "OK: none of \(names.count) queues need Rosetta or have missing filters"
+        }
+        printTable(headers: ["QUEUE", "PROBLEM", "ARCH", "FILTER"], rows: rows)
+        print("\nThis Mac: \(host).")
+        return "OK: \(affected) of \(names.count) queues need Rosetta or have missing filters"
     }
 }

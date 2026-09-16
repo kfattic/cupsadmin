@@ -210,7 +210,8 @@ struct SidebarView: View {
         List(selection: $selection) {
             Section("Printers") {
                 ForEach(filtered) { printer in
-                    PrinterRow(printer: printer, isDefault: store.defaultPrinter == printer.name)
+                    PrinterRow(printer: printer, isDefault: store.defaultPrinter == printer.name,
+                               driverWarning: store.driverFilters[printer.name]?.headline)
                         .tag(printer.name)
                         .contextMenu { menu(for: printer) }
                 }
@@ -311,6 +312,8 @@ struct QuickActionItems: View {
 struct PrinterRow: View {
     let printer: PrinterSummary
     var isDefault = false
+    /// "Driver needs Rosetta" / "Driver filter missing", added to the tooltip.
+    var driverWarning: String?
 
     var body: some View {
         HStack(spacing: 8) {
@@ -339,7 +342,7 @@ struct PrinterRow: View {
             }
         }
         .badge(printer.jobCount)
-        .help(printer.stateSummary)
+        .help(driverWarning.map { "\(printer.stateSummary) · \($0)" } ?? printer.stateSummary)
         .accessibilityElement(children: .combine)
         .accessibilityValue(printer.stateSummary)
     }

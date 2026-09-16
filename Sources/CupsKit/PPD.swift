@@ -57,6 +57,8 @@ public struct PPD {
     public private(set) var groups: [String] = []
     /// Top-level `*Key: value` attributes (NickName, Manufacturer, ...), first occurrence wins.
     public private(set) var attributes: [String: String] = [:]
+    /// Every `*cupsFilter` / `*cupsFilter2` line, in order, with the quotes removed.
+    public private(set) var filterLines: [(keyword: String, value: String)] = []
 
     public init(text: String) {
         var defaults: [String: String] = [:]
@@ -122,6 +124,9 @@ public struct PPD {
                     let (choice, label) = Self.splitText(String(parts[1]))
                     current!.choices.append(choice)
                     current!.choiceList.append(Choice(keyword: choice, text: label ?? choice))
+                } else if parts.count == 1, mainKey == "cupsFilter" || mainKey == "cupsFilter2" {
+                    filterLines.append((mainKey, value.trimmingCharacters(in: CharacterSet(charactersIn: "\""))))
+                    if attributes[mainKey] == nil { attributes[mainKey] = filterLines.last!.value }
                 } else if parts.count == 1, attributes[mainKey] == nil {
                     attributes[mainKey] = value.trimmingCharacters(in: CharacterSet(charactersIn: "\""))
                 }

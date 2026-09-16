@@ -25,6 +25,7 @@ Requires macOS 14 or later. Universal (Apple silicon and Intel).
 
 ```
 cupsadmin printers               # every queue: state, reasons, accepting, shared, URI
+cupsadmin printers --rosetta     # only queues whose driver filters are Intel-only or missing
 cupsadmin printer <queue>        # one queue in detail (--all for every IPP attribute)
 cupsadmin jobs [queue]           # active jobs (--completed, --all-jobs)
 cupsadmin cancel <job-id>        # cancel one job
@@ -109,6 +110,7 @@ Or put those three lines (without `export`) in a `build.env` next to `build.sh`;
 - Queue defaults written by `set`, `quick` and the app's Options page go into `/etc/cups/ppd/<queue>.ppd` via `lpadmin`, so they apply to every user on the Mac — the same thing the web UI's "Set Default Options" did. Per-user `~/.cups/lpoptions` overrides still win for that user's own jobs.
 - PPD files are world-readable. A locked-print password or login password set as a queue default is stored in plain text; the tool warns before doing that. User codes are accounting codes, not secrets.
 - New queues default to `printer-is-shared=false`. `lpadmin` defaults to shared; this tool doesn't.
+- Driver filters named in a queue's PPD (`*cupsFilter`, `*cupsFilter2`) are checked for an arm64 slice. Queues whose filters are Intel-only show "Driver needs Rosetta" in the app's header and sidebar tooltip and a `WARNING` line in `cupsadmin printer` and `ppdreport`; filters that don't exist show "Driver filter missing". `cupsadmin printers --rosetta` lists the affected queues, for fleet reporting.
 
 ## About
 

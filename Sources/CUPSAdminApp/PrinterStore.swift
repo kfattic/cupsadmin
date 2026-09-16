@@ -103,6 +103,8 @@ final class PrinterStore {
     private(set) var defaultPrinter: String?
     /// Driver PPD + IPP attributes per queue, for enabling Quick Actions.
     private(set) var drivers: [String: DriverContext] = [:]
+    /// Filter check per queue (Intel-only or missing filters), from the cached PPDs.
+    private(set) var driverFilters: [String: DriverFilterReport] = [:]
     var failure: Failure?
 
     let client = CupsClient()
@@ -201,6 +203,11 @@ final class PrinterStore {
         for printer in printers where drivers[printer.name] == nil {
             if let context = try? await DriverContext.load(client: client, queue: printer.name) {
                 drivers[printer.name] = context
+                if let ppd = context.ppd {
+                    driverFilters[printer.name] = await Task.detached { DriverFilterCheck.check(ppd) }.value
+                } else {
+                    driverFilters[printer.name] = nil
+                }
             }
         }
     }

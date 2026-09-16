@@ -12,7 +12,7 @@ struct PrinterDetailView: View {
     var body: some View {
         VStack(spacing: 0) {
             if let printer = model.printer {
-                PrinterHeaderView(printer: printer, ppdPath: model.ppdPath)
+                PrinterHeaderView(printer: printer, ppdPath: model.ppdPath, driverFilters: model.driverFilters)
                 Divider()
             } else if let error = model.loadError {
                 ContentUnavailableView("Can’t Load \(model.queue)", systemImage: "exclamationmark.triangle",
@@ -35,6 +35,7 @@ struct PrinterDetailView: View {
 struct PrinterHeaderView: View {
     let printer: IPPGroup
     let ppdPath: String?
+    let driverFilters: DriverFilterReport?
 
     private var state: Int? { printer.int("printer-state") }
     private var accepting: Bool { printer.bool("printer-is-accepting-jobs") ?? true }
@@ -64,6 +65,13 @@ struct PrinterHeaderView: View {
                     }
                     LabeledContent("Accepting jobs", value: accepting ? "Yes" : "No")
                     LabeledContent("Shared", value: printer.bool("printer-is-shared") == true ? "Yes" : "No")
+                    if let headline = driverFilters?.headline {
+                        LabeledContent("Driver") {
+                            Label(headline, systemImage: "exclamationmark.triangle.fill")
+                                .symbolRenderingMode(.multicolor)
+                        }
+                        .help(driverFilters?.detail ?? headline)
+                    }
                 }
             }
             Form {
@@ -93,7 +101,7 @@ struct PrinterHeaderView: View {
         .formStyle(.grouped)
         .scrollDisabled(true)
         .textSelection(.enabled)
-        .frame(height: 262)
+        .frame(height: driverFilters?.isFlagged == true ? 300 : 262)
     }
 }
 

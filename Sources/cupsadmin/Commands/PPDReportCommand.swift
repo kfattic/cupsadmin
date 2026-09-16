@@ -37,6 +37,22 @@ enum PPDReportCommand {
             action.isAvailable(in: context) ? action.id : "\(action.id) (unavailable)"
         }
         print("Quick:        \(quick.joined(separator: ", "))")
+        let filters = DriverFilterCheck.check(ppd)
+        if !filters.filters.isEmpty {
+            print("Filters:      " + filters.filters.map { filter -> String in
+                switch filter.status {
+                case .native(let archs): return "\(filter.name) (\(archs.joined(separator: " ")))"
+                case .intelOnly(let archs): return "\(filter.name) (\(archs.joined(separator: " ")) only)"
+                case .script: return "\(filter.name) (script)"
+                case .passthrough: return "- (pass-through)"
+                case .missing: return "\(filter.name) (missing)"
+                case .unrecognized: return "\(filter.name) (unrecognized)"
+                }
+            }.joined(separator: ", "))
+        }
+        if let warning = filters.warning {
+            print("WARNING:      \(warning)")
+        }
 
         for group in ppd.groups {
             print("\n\(group)")

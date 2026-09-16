@@ -37,6 +37,8 @@ enum JobFilter: String, CaseIterable, Identifiable {
 final class PrinterDetailModel {
     let queue: String
     private(set) var printer: IPPGroup?
+    /// Intel-only or missing driver filters, from the queue's PPD.
+    private(set) var driverFilters: DriverFilterReport?
     private(set) var jobs: [JobSummary] = []
     private(set) var loadError: String?
     private(set) var isWorking = false
@@ -73,6 +75,11 @@ final class PrinterDetailModel {
         do {
             printer = try await store.client.getPrinterAttributes(queue: queue, requested: Self.headerAttributes)
             loadError = nil
+            if let text = try await store.client.getPPD(queue: queue) {
+                driverFilters = await Task.detached { DriverFilterCheck.check(PPD(text: text)) }.value
+            } else {
+                driverFilters = nil
+            }
         } catch {
             loadError = String(describing: error)
             store.report("ERROR: \(queue): \(error)")
