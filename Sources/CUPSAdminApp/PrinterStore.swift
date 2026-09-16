@@ -108,6 +108,13 @@ final class PrinterStore {
     let client = CupsClient()
     private let log = Logger(subsystem: "edu.wku.cupsadmin.app", category: "store")
 
+    /// `--only-queues a,b,c` limits the app to those queues (used by `build.sh --screenshots`).
+    static let onlyQueues: Set<String>? = {
+        let args = ProcessInfo.processInfo.arguments
+        guard let i = args.firstIndex(of: "--only-queues"), i + 1 < args.count else { return nil }
+        return Set(args[i + 1].split(separator: ",").map(String.init))
+    }()
+
     /// "21 printers · 0 active jobs" for the status bar.
     var summaryLine: String {
         guard hasLoaded, errorMessage == nil else { return "" }
@@ -133,7 +140,9 @@ final class PrinterStore {
 
         do {
             let groups = try await client.getPrinters(requested: PrinterSummary.requestedAttributes)
-            printers = groups.map(PrinterSummary.init).sorted {
+            printers = groups.map(PrinterSummary.init)
+                .filter { Self.onlyQueues?.contains($0.name) ?? true }
+                .sorted {
                 $0.name.localizedStandardCompare($1.name) == .orderedAscending
             }
             errorMessage = nil

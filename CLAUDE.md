@@ -40,6 +40,7 @@ swift build                          # debug build of everything
 .build/debug/cupsadmin printers      # run the CLI
 ./test.sh                            # Swift Testing via the Command Line Tools (see flags inside)
 ./build.sh --build-only              # universal CLI + app bundle, ad-hoc signed, no identities needed
+./build.sh --screenshots             # regenerate docs/screenshots/app-jobs.png from temporary demo queues
 ./build.sh                           # release: sign, payload-free PKG, notarize, staple, spctl
 ```
 - Only the Command Line Tools are required. Universal builds are per-triple

@@ -3,6 +3,8 @@
 # (postinstall installs /usr/local/bin/cupsadmin) -> notarize -> staple -> spctl.
 # Usage: ./build.sh               full pipeline (VERSION=1.2.0 ./build.sh to set the version)
 #        ./build.sh --build-only  build CLI and app, ad-hoc signed; no identities, no pkg, no notarization
+#        ./build.sh --screenshots build like --build-only, then regenerate docs/screenshots/app-jobs.png
+#                                 (creates three demo queues on 127.0.0.1 with held jobs, deletes them after)
 #
 # Signing settings come from the environment, or from an untracked build.env next to this script
 # (plain KEY=value lines; a variable already set in the environment wins):
@@ -13,10 +15,12 @@
 set -euo pipefail
 
 BUILD_ONLY=0
+SCREENSHOTS=0
 for arg in "$@"; do
     case "$arg" in
         --build-only) BUILD_ONLY=1 ;;
-        *) echo "started $(date +%H:%M:%S)"; echo "ERROR: unknown argument $arg (use --build-only)"
+        --screenshots) BUILD_ONLY=1; SCREENSHOTS=1 ;;
+        *) echo "started $(date +%H:%M:%S)"; echo "ERROR: unknown argument $arg (use --build-only or --screenshots)"
            echo "finished $(date +%H:%M:%S) (total 0.0 min)"; exit 2 ;;
     esac
 done
@@ -27,6 +31,7 @@ STATUS="ERROR: build.sh exited unexpectedly"
 
 finish() {
     local rc=$?
+    [ "$SCREENSHOTS" -eq 1 ] && cleanup_screenshots
     if [ $rc -ne 0 ] && [ "${STATUS#OK}" != "$STATUS" ]; then STATUS="ERROR: exit $rc"; fi
     echo "$STATUS"
     echo "finished $(date +%H:%M:%S) (total $(awk -v s="$(( $(date +%s) - START_EPOCH ))" 'BEGIN{printf "%.1f", s/60}') min)"
@@ -35,6 +40,76 @@ trap finish EXIT
 trap 'STATUS="ERROR: interrupted"; exit 130' INT TERM
 
 step() { STATUS="ERROR: failed at: $1"; echo; echo "==> $1"; }
+
+# --- screenshots (--screenshots) ------------------------------------------------
+# Demo queues with generic names so the README never shows real queue names or users.
+DEMO_QUEUES="Front_Office Library_Color Lab_Mono"
+SHOT="docs/screenshots/app-jobs.png"
+APP_DOMAIN="edu.wku.cupsadmin.app"
+SAVED_PREFS=""
+
+cleanup_screenshots() {
+    osascript -e 'quit app "CUPS Admin"' >/dev/null 2>&1 || true
+    for _ in 1 2 3 4 5; do pgrep -f "CUPS Admin.app/Contents/MacOS" >/dev/null || break; sleep 1; done
+    pkill -f "CUPS Admin.app/Contents/MacOS" 2>/dev/null || true
+    for queue in $DEMO_QUEUES; do lpadmin -x "$queue" 2>/dev/null || true; done
+    if [ -n "$SAVED_PREFS" ] && [ -f "$SAVED_PREFS" ]; then
+        defaults delete "$APP_DOMAIN" 2>/dev/null || true
+        defaults import "$APP_DOMAIN" "$SAVED_PREFS" && rm -f "$SAVED_PREFS"
+        SAVED_PREFS=""
+    fi
+}
+
+take_screenshots() {
+    step "screenshots"
+    [ "$(defaults read -g AppleInterfaceStyle 2>/dev/null)" != "Dark" ] \
+        || { STATUS="ERROR: switch macOS to Light appearance first (the README screenshot is light mode)"; exit 1; }
+    cleanup_screenshots
+
+    # Save the user's app settings (window frame, selection, tab); restored in cleanup.
+    SAVED_PREFS=$(mktemp -t cupsadmin-prefs).plist
+    defaults export "$APP_DOMAIN" "$SAVED_PREFS" 2>/dev/null || defaults export "$APP_DOMAIN" - >/dev/null 2>&1 || true
+    [ -s "$SAVED_PREFS" ] || printf '{}' | plutil -convert xml1 -o "$SAVED_PREFS" -
+
+    for queue in $DEMO_QUEUES; do
+        lpadmin -p "$queue" -v "lpd://127.0.0.1/$queue" -m drv:///sample.drv/generic.ppd \
+            -D "${queue//_/ }" -L "Building A" -o printer-is-shared=false -E 2>&1 | grep -v deprecated || true
+    done
+    # Held jobs never leave the Mac; owners are generic names, not the person running the build.
+    lp -d Front_Office -U alex -H hold -t "Quarterly budget.pdf" /etc/hosts >/dev/null
+    lp -d Front_Office -U jordan -H hold -t "Staff meeting agenda" /etc/hosts >/dev/null
+    lp -d Front_Office -U sam -H hold -t "Parking permits.docx" /etc/hosts >/dev/null
+    lp -d Front_Office -U alex -H hold -t "Invoice 2291" /etc/hosts >/dev/null
+    lp -d Library_Color -U jordan -H hold -t "Event poster" /etc/hosts >/dev/null
+
+    SCREEN=$(osascript -e 'tell application "Finder" to get bounds of window of desktop' | tr -d ' ' | tr ',' ' ')
+    defaults write "$APP_DOMAIN" selectedQueue Front_Office
+    defaults write "$APP_DOMAIN" detailTab jobs
+    defaults write "$APP_DOMAIN" "NSWindow Frame main" "120 120 1400 860 $SCREEN "
+    open "$APP" --args --only-queues "${DEMO_QUEUES// /,}"
+
+    FINDER=$(mktemp -t cupsadmin-window).swift
+    cat > "$FINDER" <<'SWIFT'
+import CoreGraphics
+let windows = CGWindowListCopyWindowInfo([.optionOnScreenOnly, .excludeDesktopElements], kCGNullWindowID) as? [[String: Any]] ?? []
+if let w = windows.first(where: { ($0[kCGWindowOwnerName as String] as? String) == "CUPS Admin" && ($0[kCGWindowLayer as String] as? Int) == 0 }),
+   let id = w[kCGWindowNumber as String] as? Int { print(id) }
+SWIFT
+    WINDOW=""
+    for _ in $(seq 1 30); do WINDOW=$(swift "$FINDER" 2>/dev/null || true); [ -n "$WINDOW" ] && break; sleep 1; done
+    rm -f "$FINDER"
+    [ -n "$WINDOW" ] || { STATUS="ERROR: CUPS Admin window didn't appear on this Space"; exit 1; }
+    sleep 3   # let the sidebar, header and jobs load
+    # Capture it as the active window (colored traffic lights, accent-colored selection).
+    osascript -e "tell application id \"$APP_DOMAIN\" to activate" >/dev/null 2>&1 || true
+    open "$APP"
+    sleep 2
+    mkdir -p "$(dirname "$SHOT")"
+    screencapture -x -o -l "$WINDOW" "$SHOT" \
+        || { STATUS="ERROR: screencapture failed (Terminal needs Screen Recording permission)"; exit 1; }
+    SHOT_SIZE="$(sips -g pixelWidth -g pixelHeight "$SHOT" | awk '/pixel/ {print $2}' | paste -sd x -)"
+    echo "captured $SHOT ($SHOT_SIZE)"
+}
 
 # --- configuration -------------------------------------------------------------
 cd "$(dirname "$0")"
@@ -181,6 +256,12 @@ if [ -n "$TEAM_ID" ] && [ $BUILD_ONLY -eq 0 ]; then
         || { STATUS="ERROR: app signed with wrong team (expected CODESIGN_TEAM_ID=$TEAM_ID)"; exit 1; }
 fi
 echo "app architectures: $(lipo -archs "$APP/Contents/MacOS/$APP_EXECUTABLE")"
+
+if [ $SCREENSHOTS -eq 1 ]; then
+    take_screenshots
+    STATUS="OK: regenerated $SHOT (${SHOT_SIZE})"
+    exit 0
+fi
 
 if [ $BUILD_ONLY -eq 1 ]; then
     STATUS="OK: built $BINARY and $APP, ad-hoc signed (build only: no pkg, no notarization)"

@@ -1,17 +1,12 @@
 # CUPS Admin for macOS
 
-A native replacement for the CUPS web interface (`http://localhost:631`) that Apple removed in macOS 27.
+![CUPS Admin showing the jobs on a printer](docs/screenshots/app-jobs.png)
 
-`cupsd`, `lpadmin`, `lpstat`, `lpoptions` and IPP Everywhere queues all still work on macOS 27 — only the browser admin page is gone. This project puts it back, twice:
-
-- **`cupsadmin`** — a command-line tool for scripts, Mosyle/Jamf/Munki commands and quick checks.
-- **CUPS Admin.app** — a native SwiftUI app that covers everything the old web pages did: printers, jobs, queue options (including per-driver options like Ricoh user codes), classes and server settings.
-
-No third-party dependencies. Builds with the Xcode Command Line Tools alone.
-
-> Status: the CLI is stable (1.0.x). The app is under active development — see [Releases](../../releases) for what's shipped.
+**CUPS Admin** is a native macOS app that puts back the CUPS web interface (`http://localhost:631`) Apple removed in macOS 27 — `cupsd`, `lpadmin` and IPP Everywhere queues all still work, only the browser admin page is gone. The sidebar lists every queue with its state and active jobs; select one to see its status, hold, release, move or cancel its jobs, and change its default options the way the old "Set Default Options" page did, including per-driver settings like Ricoh user codes. Common changes (color or black & white, duplex, Letter paper, a user code, the default printer) are one-click Quick Actions, and every change is read back from cupsd so nothing fails silently. It ships with `cupsadmin`, a command-line tool for scripts, Mosyle/Jamf/Munki commands and quick checks. No third-party dependencies; builds with the Xcode Command Line Tools alone.
 
 ## Install
+
+> Status: the CLI is stable (1.0.x). The app is under active development — see [Releases](../../releases) for what's shipped.
 
 Download the signed, notarized PKG from the latest [release](../../releases). It installs:
 
@@ -84,7 +79,7 @@ VERSION=1.2.3 ./build.sh
 
 Or put those three lines (without `export`) in a `build.env` next to `build.sh`; it's read if present and gitignored. Variables already set in the environment win.
 
-`build.sh` builds a universal binary (per-architecture `swift build` + `lipo`), signs with the hardened runtime, builds the payload-free PKG, notarizes, staples and verifies with `spctl`. Use `./build.sh --build-only` to skip signing and notarization. Run `./test.sh` for the test suite (`CUPSKIT_LIVE_QUEUE=<throwaway queue>` enables the live tests; `CUPSKIT_LIVE_JOBS` and `CUPSKIT_LIVE_QUICK` take two throwaway queues each for the job and quick-action tests).
+`build.sh` builds a universal binary (per-architecture `swift build` + `lipo`), signs with the hardened runtime, builds the payload-free PKG, notarizes, staples and verifies with `spctl`. Use `./build.sh --build-only` to skip signing and notarization. `./build.sh --screenshots` regenerates the README screenshot from three temporary demo queues. Run `./test.sh` for the test suite (`CUPSKIT_LIVE_QUEUE=<throwaway queue>` enables the live tests; `CUPSKIT_LIVE_JOBS` and `CUPSKIT_LIVE_QUICK` take two throwaway queues each for the job and quick-action tests).
 
 ## Notes for admins
 
