@@ -1,12 +1,16 @@
 # CUPS Admin for macOS
 
 ![CUPS Admin showing the jobs on a printer](docs/screenshots/app-jobs.png)
+*Jobs: hold, release, move or cancel jobs on any queue.*
+
+![CUPS Admin showing a Ricoh queue's options](docs/screenshots/app-options.png)
+*Options: the queue's driver settings as a form, applied with `lpadmin` and read back.*
 
 **CUPS Admin** is a native macOS app that puts back the CUPS web interface (`http://localhost:631`) Apple removed in macOS 27 — `cupsd`, `lpadmin` and IPP Everywhere queues all still work, only the browser admin page is gone. The sidebar lists every queue with its state and active jobs; select one to see its status, hold, release, move or cancel its jobs, and change its default options the way the old "Set Default Options" page did, including per-driver settings like Ricoh user codes. Common changes (color or black & white, duplex, Letter paper, a user code, the default printer) are one-click Quick Actions, and every change is read back from cupsd so nothing fails silently. It ships with `cupsadmin`, a command-line tool for scripts, Mosyle/Jamf/Munki commands and quick checks. No third-party dependencies; builds with the Xcode Command Line Tools alone.
 
 ## Install
 
-> Status: the CLI is stable. The app (1.1) covers printers, jobs, queue options and quick actions; printer discovery, classes, the server page and the Attributes/Log tabs are still to come — see [Releases](../../releases).
+> Status: The CLI and app are both usable today; the app doesn't yet cover every page of the old web interface.
 
 Download the signed, notarized PKG from the latest [release](../../releases). It installs:
 
@@ -60,7 +64,7 @@ Which keywords an action writes comes from a driver profile (`Sources/CupsKit/Re
 | Ricoh M C251FW PS | ✓ color, black & white, duplex, Letter (no user code) |
 | Ricoh PCL (e.g. SP 3710DN) | ✓ duplex, Letter (generic) |
 | Any other PPD, IPP Everywhere / AirPrint | ✓ color, black & white, duplex, Letter where the queue supports them (generic) |
-| Canon, HP, Xerox, Konica Minolta user/department codes | not yet — contribute a profile |
+| Canon, HP, Xerox, Konica Minolta user/department codes | no built-in profile — add one (below) |
 
 ### Adding your printer's driver
 

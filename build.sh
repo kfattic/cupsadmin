@@ -3,8 +3,9 @@
 # (postinstall installs /usr/local/bin/cupsadmin and /Applications/CUPS Admin.app) -> notarize -> staple -> spctl.
 # Usage: ./build.sh               full pipeline (VERSION=1.2.0 ./build.sh to set the version)
 #        ./build.sh --build-only  build CLI and app, ad-hoc signed; no identities, no pkg, no notarization
-#        ./build.sh --screenshots build like --build-only, then regenerate docs/screenshots/app-jobs.png
-#                                 (creates three demo queues on 127.0.0.1 with held jobs, deletes them after)
+#        ./build.sh --screenshots build like --build-only, then regenerate docs/screenshots/app-jobs.png and
+#                                 app-options.png (creates four demo queues on 127.0.0.1 — one on Ricoh's
+#                                 IM C4500 PPD — with held jobs, and deletes them after)
 #
 # Signing settings come from the environment, or from an untracked build.env next to this script
 # (plain KEY=value lines; a variable already set in the environment wins):
@@ -43,8 +44,10 @@ step() { STATUS="ERROR: failed at: $1"; echo; echo "==> $1"; }
 
 # --- screenshots (--screenshots) ------------------------------------------------
 # Demo queues with generic names so the README never shows real queue names or users.
-DEMO_QUEUES="Front_Office Library_Color Lab_Mono"
-SHOT="docs/screenshots/app-jobs.png"
+DEMO_QUEUES="Copy_Room Front_Office Library_Color Lab_Mono"
+SHOT_JOBS="docs/screenshots/app-jobs.png"
+SHOT_OPTIONS="docs/screenshots/app-options.png"
+RICOH_DEMO_PPD="/Library/Printers/PPDs/Contents/Resources/RICOH IM C4500"
 APP_DOMAIN="edu.wku.cupsadmin.app"
 SAVED_PREFS=""
 
@@ -60,21 +63,57 @@ cleanup_screenshots() {
     fi
 }
 
+# capture_app <queue> <tab> <file>: launch the app on one queue and tab, capture its window.
+capture_app() {
+    local queue="$1" tab="$2" file="$3" window="" finder
+    osascript -e 'quit app "CUPS Admin"' >/dev/null 2>&1 || true
+    for _ in 1 2 3 4 5; do pgrep -f "CUPS Admin.app/Contents/MacOS" >/dev/null || break; sleep 1; done
+    defaults write "$APP_DOMAIN" selectedQueue "$queue"
+    defaults write "$APP_DOMAIN" detailTab "$tab"
+    defaults write "$APP_DOMAIN" "NSWindow Frame main" "120 120 1400 860 $SCREEN "
+    open "$APP" --args --only-queues "${DEMO_QUEUES// /,}"
+
+    finder=$(mktemp -t cupsadmin-window).swift
+    cat > "$finder" <<'SWIFT'
+import CoreGraphics
+let windows = CGWindowListCopyWindowInfo([.optionOnScreenOnly, .excludeDesktopElements], kCGNullWindowID) as? [[String: Any]] ?? []
+if let w = windows.first(where: { ($0[kCGWindowOwnerName as String] as? String) == "CUPS Admin" && ($0[kCGWindowLayer as String] as? Int) == 0 }),
+   let id = w[kCGWindowNumber as String] as? Int { print(id) }
+SWIFT
+    for _ in $(seq 1 30); do window=$(swift "$finder" 2>/dev/null || true); [ -n "$window" ] && break; sleep 1; done
+    rm -f "$finder"
+    [ -n "$window" ] || { STATUS="ERROR: CUPS Admin window didn't appear on this Space"; exit 1; }
+    sleep 3   # let the sidebar, header and tab content load
+    # Capture it as the active window (colored traffic lights, accent-colored selection).
+    osascript -e "tell application id \"$APP_DOMAIN\" to activate" >/dev/null 2>&1 || true
+    open "$APP"
+    sleep 2
+    mkdir -p "$(dirname "$file")"
+    screencapture -x -o -l "$window" "$file" \
+        || { STATUS="ERROR: screencapture failed (Terminal needs Screen Recording permission)"; exit 1; }
+    echo "captured $file ($(sips -g pixelWidth -g pixelHeight "$file" | awk '/pixel/ {print $2}' | paste -sd x -))"
+}
+
 take_screenshots() {
     step "screenshots"
     [ "$(defaults read -g AppleInterfaceStyle 2>/dev/null)" != "Dark" ] \
-        || { STATUS="ERROR: switch macOS to Light appearance first (the README screenshot is light mode)"; exit 1; }
+        || { STATUS="ERROR: switch macOS to Light appearance first (the README screenshots are light mode)"; exit 1; }
+    [ -f "$RICOH_DEMO_PPD" ] \
+        || { STATUS="ERROR: the Options screenshot needs Ricoh's driver ($RICOH_DEMO_PPD not found)"; exit 1; }
     cleanup_screenshots
 
     # Save the user's app settings (window frame, selection, tab); restored in cleanup.
     SAVED_PREFS=$(mktemp -t cupsadmin-prefs).plist
-    defaults export "$APP_DOMAIN" "$SAVED_PREFS" 2>/dev/null || defaults export "$APP_DOMAIN" - >/dev/null 2>&1 || true
+    defaults export "$APP_DOMAIN" "$SAVED_PREFS" 2>/dev/null || true
     [ -s "$SAVED_PREFS" ] || printf '{}' | plutil -convert xml1 -o "$SAVED_PREFS" -
 
-    for queue in $DEMO_QUEUES; do
+    for queue in Front_Office Library_Color Lab_Mono; do
         lpadmin -p "$queue" -v "lpd://127.0.0.1/$queue" -m drv:///sample.drv/generic.ppd \
             -D "${queue//_/ }" -L "Building A" -o printer-is-shared=false -E 2>&1 | grep -v deprecated || true
     done
+    # A Ricoh queue for the Options tab, set to Letter + fit to nearest size (what a US site uses).
+    lpadmin -p Copy_Room -v lpd://127.0.0.1/Copy_Room -P "$RICOH_DEMO_PPD" -D "Copy Room" -L "Building A" \
+        -o printer-is-shared=false -o PageSize=Letter -o RIPaperPolicy=NearestSizeAdjust -E 2>&1 | grep -v deprecated || true
     # Held jobs never leave the Mac; owners are generic names, not the person running the build.
     lp -d Front_Office -U alex -H hold -t "Quarterly budget.pdf" /etc/hosts >/dev/null
     lp -d Front_Office -U jordan -H hold -t "Staff meeting agenda" /etc/hosts >/dev/null
@@ -83,32 +122,8 @@ take_screenshots() {
     lp -d Library_Color -U jordan -H hold -t "Event poster" /etc/hosts >/dev/null
 
     SCREEN=$(osascript -e 'tell application "Finder" to get bounds of window of desktop' | tr -d ' ' | tr ',' ' ')
-    defaults write "$APP_DOMAIN" selectedQueue Front_Office
-    defaults write "$APP_DOMAIN" detailTab jobs
-    defaults write "$APP_DOMAIN" "NSWindow Frame main" "120 120 1400 860 $SCREEN "
-    open "$APP" --args --only-queues "${DEMO_QUEUES// /,}"
-
-    FINDER=$(mktemp -t cupsadmin-window).swift
-    cat > "$FINDER" <<'SWIFT'
-import CoreGraphics
-let windows = CGWindowListCopyWindowInfo([.optionOnScreenOnly, .excludeDesktopElements], kCGNullWindowID) as? [[String: Any]] ?? []
-if let w = windows.first(where: { ($0[kCGWindowOwnerName as String] as? String) == "CUPS Admin" && ($0[kCGWindowLayer as String] as? Int) == 0 }),
-   let id = w[kCGWindowNumber as String] as? Int { print(id) }
-SWIFT
-    WINDOW=""
-    for _ in $(seq 1 30); do WINDOW=$(swift "$FINDER" 2>/dev/null || true); [ -n "$WINDOW" ] && break; sleep 1; done
-    rm -f "$FINDER"
-    [ -n "$WINDOW" ] || { STATUS="ERROR: CUPS Admin window didn't appear on this Space"; exit 1; }
-    sleep 3   # let the sidebar, header and jobs load
-    # Capture it as the active window (colored traffic lights, accent-colored selection).
-    osascript -e "tell application id \"$APP_DOMAIN\" to activate" >/dev/null 2>&1 || true
-    open "$APP"
-    sleep 2
-    mkdir -p "$(dirname "$SHOT")"
-    screencapture -x -o -l "$WINDOW" "$SHOT" \
-        || { STATUS="ERROR: screencapture failed (Terminal needs Screen Recording permission)"; exit 1; }
-    SHOT_SIZE="$(sips -g pixelWidth -g pixelHeight "$SHOT" | awk '/pixel/ {print $2}' | paste -sd x -)"
-    echo "captured $SHOT ($SHOT_SIZE)"
+    capture_app Front_Office jobs "$SHOT_JOBS"
+    capture_app Copy_Room options "$SHOT_OPTIONS"
 }
 
 # --- configuration -------------------------------------------------------------
@@ -259,7 +274,7 @@ echo "app architectures: $(lipo -archs "$APP/Contents/MacOS/$APP_EXECUTABLE")"
 
 if [ $SCREENSHOTS -eq 1 ]; then
     take_screenshots
-    STATUS="OK: regenerated $SHOT (${SHOT_SIZE})"
+    STATUS="OK: regenerated $SHOT_JOBS and $SHOT_OPTIONS"
     exit 0
 fi
 
