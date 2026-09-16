@@ -6,14 +6,14 @@
 
 ## Install
 
-> Status: the CLI is stable (1.0.x). The app is under active development — see [Releases](../../releases) for what's shipped.
+> Status: the CLI is stable. The app (1.1) covers printers, jobs, queue options and quick actions; printer discovery, classes, the server page and the Attributes/Log tabs are still to come — see [Releases](../../releases).
 
 Download the signed, notarized PKG from the latest [release](../../releases). It installs:
 
 - `/usr/local/bin/cupsadmin`
-- `/Applications/CUPS Admin.app` (once the app ships)
+- `/Applications/CUPS Admin.app`
 
-The package is payload-free and installs via a postinstall script, so it never changes the ownership of an existing `/usr/local/bin` (Homebrew on Intel Macs is safe). For Munki, use an `installs` array pointing at `/usr/local/bin/cupsadmin`; there is no payload file list to key off.
+The package is payload-free and installs both via a postinstall script, so it never changes the ownership of an existing `/usr/local/bin` (Homebrew on Intel Macs is safe) or of `/Applications`. For Munki, use an `installs` array pointing at `/usr/local/bin/cupsadmin` and `/Applications/CUPS Admin.app`; there is no payload file list to key off.
 
 Requires macOS 14 or later. Universal (Apple silicon and Intel).
 
@@ -98,7 +98,7 @@ VERSION=1.2.3 ./build.sh
 
 Or put those three lines (without `export`) in a `build.env` next to `build.sh`; it's read if present and gitignored. Variables already set in the environment win.
 
-`build.sh` builds a universal binary (per-architecture `swift build` + `lipo`), signs with the hardened runtime, builds the payload-free PKG, notarizes, staples and verifies with `spctl`. Use `./build.sh --build-only` to skip signing and notarization. `./build.sh --screenshots` regenerates the README screenshot from three temporary demo queues. Run `./test.sh` for the test suite (`CUPSKIT_LIVE_QUEUE=<throwaway queue>` enables the live tests; `CUPSKIT_LIVE_JOBS` and `CUPSKIT_LIVE_QUICK` take two throwaway queues each for the job and quick-action tests).
+`build.sh` builds a universal binary (per-architecture `swift build` + `lipo`), signs the CLI and app with the hardened runtime, notarizes and staples the app, builds the payload-free PKG, notarizes and staples it, and verifies both with `spctl`. Use `./build.sh --build-only` to skip signing and notarization. `./build.sh --screenshots` regenerates the README screenshot from three temporary demo queues. Run `./test.sh` for the test suite (`CUPSKIT_LIVE_QUEUE=<throwaway queue>` enables the live tests; `CUPSKIT_LIVE_JOBS` and `CUPSKIT_LIVE_QUICK` take two throwaway queues each for the job and quick-action tests).
 
 ## Notes for admins
 

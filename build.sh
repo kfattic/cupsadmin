@@ -1,6 +1,6 @@
 #!/bin/bash
-# Universal release build -> signed CLI binary + signed "CUPS Admin.app" -> signed payload-free PKG
-# (postinstall installs /usr/local/bin/cupsadmin) -> notarize -> staple -> spctl.
+# Universal release build -> signed CLI + signed, notarized, stapled "CUPS Admin.app" -> signed payload-free PKG
+# (postinstall installs /usr/local/bin/cupsadmin and /Applications/CUPS Admin.app) -> notarize -> staple -> spctl.
 # Usage: ./build.sh               full pipeline (VERSION=1.2.0 ./build.sh to set the version)
 #        ./build.sh --build-only  build CLI and app, ad-hoc signed; no identities, no pkg, no notarization
 #        ./build.sh --screenshots build like --build-only, then regenerate docs/screenshots/app-jobs.png
@@ -113,7 +113,7 @@ SWIFT
 
 # --- configuration -------------------------------------------------------------
 cd "$(dirname "$0")"
-VERSION="${VERSION:-1.0.1}"
+VERSION="${VERSION:-1.1.0}"
 IDENTIFIER="edu.wku.cupsadmin"
 
 # build.env fills in only what the environment doesn't already set.
@@ -268,11 +268,53 @@ if [ $BUILD_ONLY -eq 1 ]; then
     exit 0
 fi
 
+# --- notarize helper --------------------------------------------------------------
+# notarize <file> <label>: submits, waits, saves the log; fails the build unless Accepted.
+notarize() {
+    local file="$1" label="$2"
+    local json="$DIST/notary-$label.json"
+    xcrun notarytool submit "$file" --keychain-profile "$NOTARY_PROFILE" --wait --output-format json > "$json" || true
+    local status id
+    status=$(plutil -extract status raw "$json" 2>/dev/null || echo "unknown")
+    id=$(plutil -extract id raw "$json" 2>/dev/null || echo "")
+    echo "$label submission $id: $status"
+    if [ -n "$id" ]; then
+        xcrun notarytool log "$id" --keychain-profile "$NOTARY_PROFILE" "$DIST/notary-$label-log.json" >/dev/null 2>&1 || true
+    fi
+    [ "$status" = "Accepted" ] \
+        || { STATUS="ERROR: $label notarization $status (see $json and $DIST/notary-$label-log.json)"; exit 1; }
+}
+
+# spctl_check <type> <path> <log>: must be accepted as Notarized Developer ID.
+spctl_check() {
+    local type="$1" path="$2" log="$3" out
+    out=$(spctl -a -vv -t "$type" "$path" 2>&1 || true)
+    echo "$out" | tee "$log"
+    echo "$out" | grep -q ': accepted' && echo "$out" | grep -q 'source=Notarized Developer ID' \
+        || { STATUS="ERROR: spctl did not accept $path as Notarized Developer ID"; exit 1; }
+}
+
+# --- notarize + staple app --------------------------------------------------------
+step "notarize app (uploads to Apple and waits)"
+APP_ZIP="$DIST/CUPS-Admin-$VERSION.zip"
+rm -f "$APP_ZIP"
+ditto -c -k --keepParent "$APP" "$APP_ZIP"
+notarize "$APP_ZIP" app
+rm -f "$APP_ZIP"
+xcrun stapler staple "$APP"
+xcrun stapler validate "$APP"
+spctl_check execute "$APP" "$DIST/spctl-app.txt"
+
 # --- build + sign pkg -----------------------------------------------------------
+# Payload-free for the app too: an /Applications payload's "." entry is recorded as root:wheel, but
+# /Applications is root:admin 775 — installing it could take away admins' drag-install rights.
+# pkg/postinstall copies both the CLI and the stapled app instead.
 step "build and sign pkg"
 rm -f "$PKG"
 cp pkg/postinstall "$SCRIPTS/postinstall"
 chmod 755 "$SCRIPTS/postinstall"
+rm -rf "$SCRIPTS/CUPS Admin.app"
+ditto "$APP" "$SCRIPTS/CUPS Admin.app"
 pkgbuild --nopayload --scripts "$SCRIPTS" --identifier "$IDENTIFIER" --version "$VERSION" \
     --sign "$INSTALLER_SIGN_ID" --timestamp "$PKG"
 pkgutil --check-signature "$PKG"
@@ -286,41 +328,33 @@ if [ -n "$(printf '%s' "$PAYLOAD_FILES" | grep -v -i 'no payload' || true)" ]; t
     exit 1
 fi
 EXPANDED="$DIST/expanded"
+rm -rf "$EXPANDED"
 pkgutil --expand "$PKG" "$EXPANDED"
 # pkgutil --expand unpacks the Scripts archive into a directory.
 echo "Scripts: $(ls "$EXPANDED/Scripts" | tr '\n' ' ')"
-[ -x "$EXPANDED/Scripts/postinstall" ] && [ -f "$EXPANDED/Scripts/cupsadmin" ] \
-    || { STATUS="ERROR: Scripts missing postinstall or cupsadmin"; exit 1; }
+[ -x "$EXPANDED/Scripts/postinstall" ] && [ -f "$EXPANDED/Scripts/cupsadmin" ] && [ -d "$EXPANDED/Scripts/CUPS Admin.app" ] \
+    || { STATUS="ERROR: Scripts missing postinstall, cupsadmin or CUPS Admin.app"; exit 1; }
 codesign --verify --strict "$EXPANDED/Scripts/cupsadmin" \
     || { STATUS="ERROR: binary inside pkg Scripts lost its signature"; exit 1; }
-echo "binary inside pkg: signature intact, $(lipo -archs "$EXPANDED/Scripts/cupsadmin")"
+codesign --verify --deep --strict "$EXPANDED/Scripts/CUPS Admin.app" \
+    || { STATUS="ERROR: app inside pkg Scripts lost its signature"; exit 1; }
+xcrun stapler validate "$EXPANDED/Scripts/CUPS Admin.app" >/dev/null \
+    || { STATUS="ERROR: app inside pkg Scripts lost its stapled ticket"; exit 1; }
+echo "inside pkg: cupsadmin signed ($(lipo -archs "$EXPANDED/Scripts/cupsadmin")), CUPS Admin.app signed and stapled"
 rm -rf "$EXPANDED"
 
-# --- notarize -------------------------------------------------------------------
-step "notarize (this uploads the pkg to Apple and waits)"
-SUBMIT_JSON="$DIST/notary-submit.json"
-xcrun notarytool submit "$PKG" --keychain-profile "$NOTARY_PROFILE" --wait --output-format json > "$SUBMIT_JSON" || true
-NOTARY_STATUS=$(plutil -extract status raw "$SUBMIT_JSON" 2>/dev/null || echo "unknown")
-SUBMISSION_ID=$(plutil -extract id raw "$SUBMIT_JSON" 2>/dev/null || echo "")
-echo "submission $SUBMISSION_ID: $NOTARY_STATUS"
-if [ -n "$SUBMISSION_ID" ]; then
-    xcrun notarytool log "$SUBMISSION_ID" --keychain-profile "$NOTARY_PROFILE" "$DIST/notary-log.json" >/dev/null 2>&1 || true
-fi
-if [ "$NOTARY_STATUS" != "Accepted" ]; then
-    STATUS="ERROR: notarization $NOTARY_STATUS (see $SUBMIT_JSON and $DIST/notary-log.json)"
-    exit 1
-fi
+# --- notarize + staple pkg ------------------------------------------------------
+step "notarize pkg (uploads to Apple and waits)"
+notarize "$PKG" pkg
 
-# --- staple + verify ------------------------------------------------------------
-step "staple"
+step "staple pkg"
 xcrun stapler staple "$PKG"
 xcrun stapler validate "$PKG"
 
 step "spctl assessment"
-spctl -a -vv -t install "$PKG" 2>&1 | tee "$DIST/spctl.txt"
-grep -q ': accepted' "$DIST/spctl.txt" && grep -q 'source=Notarized Developer ID' "$DIST/spctl.txt" \
-    || { STATUS="ERROR: spctl did not accept $PKG as Notarized Developer ID"; exit 1; }
+spctl_check install "$PKG" "$DIST/spctl.txt"
+spctl_check execute "$APP" "$DIST/spctl-app.txt"
 
 echo
 echo "install: sudo installer -pkg $PKG -target /"
-STATUS="OK: $PKG signed, notarized ($SUBMISSION_ID), stapled, spctl accepted"
+STATUS="OK: $PKG (CLI + CUPS Admin.app) signed, app and pkg notarized, stapled, spctl accepted"

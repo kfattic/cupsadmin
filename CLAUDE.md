@@ -53,8 +53,10 @@ swift build                          # debug build of everything
 - Package: tools-version 6.0, Swift 5 language mode, macOS 14 minimum.
 - `build.sh` reads `CODESIGN_APP_IDENTITY`, `CODESIGN_PKG_IDENTITY`, `NOTARY_PROFILE` (and optional
   `CODESIGN_TEAM_ID`) from the environment or an untracked `build.env`. Never hard-code identities.
-- The PKG is payload-free (`pkgbuild --nopayload --scripts`; `pkg/postinstall` copies the binary), because
-  any payload's "." entry would reset an existing `/usr/local/bin`'s ownership.
+- The PKG is payload-free (`pkgbuild --nopayload --scripts`): `pkg/postinstall` installs the CLI to
+  `/usr/local/bin` and the notarized, stapled app to `/Applications`. A payload's "." entry is recorded as
+  root:wheel for its install location, which would reset an existing `/usr/local/bin` (Homebrew) or
+  `/Applications` (root:admin 775). The app is notarized and stapled before packaging; the PKG after.
 - The app icon master is `Icon/AppIcon-1024.png`; `build.sh` generates `AppIcon.icns` from it. Don't redraw it.
 - Live tests are opt-in and write to queues: `CUPSKIT_LIVE_QUEUE=<queue>`, `CUPSKIT_LIVE_JOBS=<a>,<b>`,
   `CUPSKIT_LIVE_QUICK=<ricoh>,<generic>`. Use throwaway queues (e.g. `lpd://127.0.0.1/…`, paused) and
