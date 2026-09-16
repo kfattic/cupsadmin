@@ -41,6 +41,8 @@ let usage = """
       quick                      list quick actions (task-named queue defaults)
       quick <action> <queue> [code | --clear]
                                  apply one via lpadmin, then verify
+      ppdreport <queue> | --file <path.ppd>
+                                 every PPD group and option: keyword, label, type, default, choices
       help                       show this help
     """
 
@@ -116,6 +118,19 @@ func runCommand(_ args: [String]) async throws -> String {
     case "set":
         let (queue, spec) = try QueueSpec.parse(rest, command: command)
         return try await SetCommand.run(client: client, queue: queue, spec: spec)
+
+    case "ppdreport":
+        var file: String?
+        if let i = rest.firstIndex(of: "--file") {
+            guard i + 1 < rest.count else { throw CupsAdminError.usage("--file needs a path") }
+            file = rest[i + 1]
+            rest.removeSubrange(i ... i + 1)
+        }
+        try rejectUnknownFlags()
+        guard (file == nil && rest.count == 1) || (file != nil && rest.isEmpty) else {
+            throw CupsAdminError.usage("ppdreport needs one queue name or --file <path.ppd>")
+        }
+        return try await PPDReportCommand.run(client: client, queue: rest.first, file: file)
 
     case "quick":
         let clear = takeFlag("--clear")

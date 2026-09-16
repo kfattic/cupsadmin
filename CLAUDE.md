@@ -31,8 +31,12 @@ Private maintainer notes, if present, are in `CLAUDE.local.md` (gitignored).
   a per-user override.
 - **PPD options** keep their `*OpenGroup`, UI type and `*ParamCustom` type/range. Custom values are
   written as `Custom.<value>` and quoted when they contain spaces (unquoted, `lpadmin` silently truncates).
-- **Quick actions** (`QuickActions.swift`) are data: title, symbol, PPD keyword/value variants, input
-  type. Actions whose keywords aren't in a queue's PPD are unavailable, with the reason.
+- **Quick actions** are vendor-neutral. `QuickActions.swift` defines the actions; what each writes comes
+  from `Resources/driver-profiles.json` (embedded in code — the CLI is a single binary), matched on the
+  PPD's `*Manufacturer`/`*NickName`, vendor profiles first and `generic` (standard PPD keywords, IPP
+  Everywhere `*-default` attributes) last. A pair is used only if that queue supports the keyword and
+  value; otherwise the action is unavailable with the reason. `cupsadmin ppdreport <queue>` shows a
+  driver's keywords and which actions its profile enables.
 
 ## Build and test
 ```

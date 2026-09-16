@@ -39,24 +39,34 @@ final class QuickActionModel: Identifiable {
         }
     }
 
-    var currentCode: String? { QuickAction.currentUserCode(state?.ppd) }
+    var context: DriverContext {
+        DriverContext(ppd: state?.ppd, attributes: state?.snapshot.attributes)
+    }
 
-    var validationError: String? { action.validationError(code, ppd: state?.ppd) }
+    var currentCode: String? { action.currentCode(context) }
+
+    var validationError: String? { action.validationError(code, context: context) }
 
     /// What will be written, or why the action can't run here.
     func plannedChanges(clearing: Bool = false) -> Result<[OptionChange], QuickActionUnavailable> {
-        action.changes(for: state?.ppd, value: clearing ? "" : code)
+        action.resolve(context, value: clearing ? nil : code, clearing: clearing).map(\.changes)
+    }
+
+    /// "Ricoh", "Generic (…)" — which driver profile supplied the keywords.
+    var profileName: String? {
+        guard !action.isDefaultPrinter, case .success(let resolved) = action.resolve(context, value: code.isEmpty ? "0" : code) else { return nil }
+        return resolved.profile.name
     }
 
     var command: String {
-        if case .defaultPrinter = action.effect { return CupsTools.commandLine(CupsTools.lpadminPath, ["-d", queue]) }
+        if action.isDefaultPrinter { return CupsTools.commandLine(CupsTools.lpadminPath, ["-d", queue]) }
         guard case .success(let changes) = plannedChanges() else { return "" }
         return OptionApplier.displayCommand(queue: queue, changes: changes)
     }
 
     /// `lpstat` and apps use ~/.cups/lpoptions' Default line over the server default.
     var userDefaultNote: String? {
-        guard case .defaultPrinter = action.effect,
+        guard action.isDefaultPrinter,
               let text = try? String(contentsOf: LpOptionsFile.userFileURL, encoding: .utf8),
               let line = text.split(whereSeparator: \.isNewline).first(where: { $0.hasPrefix("Default ") }) else { return nil }
         let name = line.split(separator: " ")[1].split(separator: "/")[0]
@@ -70,8 +80,8 @@ final class QuickActionModel: Identifiable {
         phase = .running
         let started = Date()
         do {
-            let outcome = try await action.run(queue: queue, value: clearing ? "" : (action.input == .userCode ? code : nil),
-                                               client: store.client)
+            let outcome = try await action.run(queue: queue, value: action.input == .userCode && !clearing ? code : nil,
+                                               clearing: clearing, client: store.client)
             readBack = Dictionary(uniqueKeysWithValues: outcome.readBack.map { ($0.key, $0) })
             state = try? await OptionState.load(client: store.client, queue: queue)
             let seconds = elapsedText(since: started)
@@ -108,6 +118,11 @@ struct QuickActionSheet: View {
                     .font(.title3.weight(.semibold))
                 Text("\(model.queue) · saved as the queue default for every user on this Mac")
                     .foregroundStyle(.secondary)
+                if let driver = model.state.map({ _ in model.context.driverName }), let profile = model.profileName {
+                    Text("\(driver) · driver profile: \(profile)")
+                        .font(.callout)
+                        .foregroundStyle(.secondary)
+                }
             }
 
             switch model.phase {
@@ -184,7 +199,7 @@ struct QuickActionSheet: View {
             .frame(height: 130)
         }
 
-        if case .defaultPrinter = model.action.effect {
+        if model.action.isDefaultPrinter {
             Grid(alignment: .leading, horizontalSpacing: 16, verticalSpacing: 6) {
                 GridRow {
                     Text("Server default").foregroundStyle(.secondary)

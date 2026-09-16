@@ -28,6 +28,7 @@ cupsadmin options <queue>        # PPD options and IPP *-default values, like lp
 cupsadmin add <queue> -v <uri> [-m everywhere | -P file.ppd] [-D desc] [-L location] [--shared] [-o k=v ...]
 cupsadmin set <queue> -o k=v ... # change queue defaults, then read them back and report
 cupsadmin quick <action> <queue> [value]   # task-named shortcuts, see below
+cupsadmin ppdreport <queue>      # every PPD group and option: keyword, label, type, default, choices
 ```
 
 Every run prints `started HH:MM:SS`, one status line (`OK: …` or `ERROR: …`) and `finished HH:MM:SS (total N min)` — on every exit path. Status lines go to stderr so table output pipes cleanly.
@@ -48,7 +49,25 @@ cupsadmin quick letter <queue>         # Letter paper + fit to nearest size (no 
 cupsadmin quick default <queue>        # make this the server default printer
 ```
 
-Actions whose option isn't in the queue's PPD are refused with a message saying why. Because these are ordinary `lpadmin -p <queue> -o …` writes, they work in an MDM custom command exactly as they do in Terminal.
+Which keywords an action writes comes from a driver profile (`Sources/CupsKit/Resources/driver-profiles.json`), matched on the PPD's manufacturer and model. If no profile maps an action for a queue's driver, the action is refused with a message saying why. Because these are ordinary `lpadmin -p <queue> -o …` writes, they work in an MDM custom command exactly as they do in Terminal.
+
+### Supported drivers
+
+| Driver | Quick actions |
+|---|---|
+| Ricoh PostScript (IM C2000/C4500, MP C2004ex/C3004ex/C307/C3504) | ✓ all |
+| Ricoh MP 5055 PS (mono) | ✓ all except color / black & white |
+| Ricoh M C251FW PS | ✓ color, black & white, duplex, Letter (no user code) |
+| Ricoh PCL (e.g. SP 3710DN) | ✓ duplex, Letter (generic) |
+| Any other PPD, IPP Everywhere / AirPrint | ✓ color, black & white, duplex, Letter where the queue supports them (generic) |
+| Canon, HP, Xerox, Konica Minolta user/department codes | not yet — contribute a profile |
+
+### Adding your printer's driver
+
+1. `cupsadmin ppdreport <queue>` lists every option your driver has; find the color, duplex, paper and accounting/user-code keywords and their choice values.
+2. Copy the `ricoh` entry in `Sources/CupsKit/Resources/driver-profiles.json`, give it an `id`, and set `match` to regular expressions for your PPD's `Manufacturer` and `NickName` (both are printed at the top of the report).
+3. Replace the `keyword=value` pairs. `{value}` is the code the user types; typed options take `Custom.{value}`. Leave out actions your driver can't do. Keep your profile above `generic`.
+4. `swift build && .build/debug/cupsadmin ppdreport <queue>` shows which quick actions are now available; try one with `cupsadmin quick`, then open a pull request.
 
 ## How it works
 

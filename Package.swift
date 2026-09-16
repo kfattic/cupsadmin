@@ -12,7 +12,8 @@ let package = Package(
         .library(name: "CupsKit", targets: ["CupsKit"]),
     ],
     targets: [
-        .target(name: "CupsKit", path: "Sources/CupsKit"),
+        // driver-profiles.json is compiled into the code: the CLI ships as a single binary with no resource bundle.
+        .target(name: "CupsKit", path: "Sources/CupsKit", resources: [.embedInCode("Resources/driver-profiles.json")]),
         .executableTarget(name: "cupsadmin", dependencies: ["CupsKit"], path: "Sources/cupsadmin"),
         .executableTarget(name: "CUPSAdminApp", dependencies: ["CupsKit"], path: "Sources/CUPSAdminApp"),
         .testTarget(name: "CupsKitTests", dependencies: ["CupsKit"], path: "Tests/CupsKitTests"),

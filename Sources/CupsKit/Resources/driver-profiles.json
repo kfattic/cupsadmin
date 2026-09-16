@@ -1,0 +1,43 @@
+{
+  "comment": "Quick Action mappings per driver. First matching profile that defines an action AND whose keyword=value pairs this queue supports wins; 'generic' (empty match) must stay last. An action is either one list of pairs (all applied together) or a list of alternative lists. {value} is replaced with the user's input. Find keywords with: cupsadmin ppdreport <queue>",
+  "profiles": [
+    {
+      "id": "ricoh-m-c251fw",
+      "name": "Ricoh M C251FW",
+      "match": { "manufacturer": "^RICOH$", "nickname": "^RICOH M C251FW" },
+      "actions": {
+        "color": ["HQColorMode=COLOR"],
+        "bw": ["HQColorMode=BW"],
+        "duplex": ["Duplex=DuplexNoTumble"],
+        "simplex": ["Duplex=None"],
+        "letter": ["PageSize=Letter"]
+      }
+    },
+    {
+      "id": "ricoh",
+      "name": "Ricoh",
+      "match": { "manufacturer": "^RICOH$" },
+      "actions": {
+        "color": ["ColorModel=CMYK"],
+        "bw": ["ColorModel=Gray"],
+        "usercode": ["RIEnableUserCode=True", "RIUserCode=Custom.{value}"],
+        "usercode-clear": ["RIEnableUserCode=False", "RIUserCode=None"],
+        "duplex": ["Duplex=DuplexNoTumble"],
+        "simplex": ["Duplex=None"],
+        "letter": ["PageSize=Letter", "RIPaperPolicy=NearestSizeAdjust"]
+      }
+    },
+    {
+      "id": "generic",
+      "name": "Generic (standard PPD keywords, IPP Everywhere)",
+      "match": {},
+      "actions": {
+        "color": [["ColorModel=CMYK"], ["ColorModel=RGB"], ["ColorModel=Color"], ["print-color-mode-default=color"]],
+        "bw": [["ColorModel=Gray"], ["ColorModel=Grayscale"], ["print-color-mode-default=monochrome"]],
+        "duplex": [["Duplex=DuplexNoTumble"], ["sides-default=two-sided-long-edge"]],
+        "simplex": [["Duplex=None"], ["sides-default=one-sided"]],
+        "letter": [["PageSize=Letter"], ["media-default=na_letter_8.5x11in"]]
+      }
+    }
+  ]
+}

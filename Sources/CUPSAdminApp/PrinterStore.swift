@@ -101,8 +101,8 @@ final class PrinterStore {
     private(set) var revision = 0
     /// The server default printer (CUPS-Get-Default), if any.
     private(set) var defaultPrinter: String?
-    /// Parsed PPDs, for enabling Quick Actions per printer. A queue with no PPD maps to nil.
-    private(set) var ppds: [String: PPD?] = [:]
+    /// Driver PPD + IPP attributes per queue, for enabling Quick Actions.
+    private(set) var drivers: [String: DriverContext] = [:]
     var failure: Failure?
 
     let client = CupsClient()
@@ -190,31 +190,28 @@ final class PrinterStore {
     }
 
     func noteChange(queue: String? = nil) {
-        if let queue { ppds[queue] = nil }
+        if let queue { drivers[queue] = nil }
         revision += 1
     }
 
-    // MARK: PPDs for Quick Actions
+    // MARK: drivers for Quick Actions
 
-    /// Fetches PPDs not yet cached, in the background of a refresh.
+    /// Loads driver info (PPD, IPP attributes) not yet cached, in the background of a refresh.
     func loadPPDs() async {
-        for printer in printers where ppds[printer.name] == nil {
-            let text = try? await client.getPPD(queue: printer.name)
-            ppds[printer.name] = .some(text.map(PPD.init(text:)))
+        for printer in printers where drivers[printer.name] == nil {
+            if let context = try? await DriverContext.load(client: client, queue: printer.name) {
+                drivers[printer.name] = context
+            }
         }
     }
 
     /// nil when the action can run on the queue, else why not (shown as the menu item's tooltip).
     func unavailableReason(_ action: QuickAction, queue: String) -> String? {
-        if case .defaultPrinter = action.effect {
+        if action.isDefaultPrinter {
             return defaultPrinter == queue ? "\(queue) is already the default printer" : nil
         }
-        guard let cached = ppds[queue] else { return "Checking \(queue)’s PPD…" }
-        if action.isAvailable(for: cached) { return nil }
-        if case .failure(let unavailable) = action.changes(for: cached, value: action.input == .userCode ? "0" : nil) {
-            return unavailable.reason
-        }
-        return "Not available on \(queue)"
+        guard let context = drivers[queue] else { return "Checking \(queue)’s driver…" }
+        return action.unavailableReason(in: context)
     }
 
     // MARK: per-printer actions
@@ -256,7 +253,7 @@ final class PrinterStore {
             report("ERROR: delete \(queue): \(error)")
             fail("Couldn’t delete \(queue)", String(describing: error))
         }
-        ppds[queue] = nil
+        drivers[queue] = nil
         noteChange()
         await refreshQuietly()
         return deleted
