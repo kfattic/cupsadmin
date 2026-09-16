@@ -116,4 +116,6 @@ Or put those three lines (without `export`) in a `build.env` next to `build.sh`;
 
 Built at Western Kentucky University by Kurt Fattic to replace the CUPS admin pages for a fleet of about 1,000 Macs, and written with Claude. MIT licensed — see `LICENSE`. Not affiliated with Apple or OpenPrinting.
 
+The Intel-only driver check was inspired by Willem Groenewald's opencups.
+
 Bug reports and driver profiles for other printers are welcome through [Issues](../../issues) and [Pull Requests](../../pulls).
