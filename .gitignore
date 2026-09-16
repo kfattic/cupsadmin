@@ -1,0 +1,25 @@
+# Build output
+.build/
+.swiftpm/
+dist/
+DerivedData/
+*.xcodeproj
+*.icns
+# Compiler output that must never land in the source tree
+*.o
+*.d
+*.dia
+*.swiftdeps
+*.swiftmodule
+
+# macOS
+.DS_Store
+
+# Local only — never commit
+build.env
+scratch/
+Claude outputs/
+
+# Maintainer-local notes and reports
+CLAUDE.local.md
+*.local.md

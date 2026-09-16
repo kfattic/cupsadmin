@@ -1,0 +1,17 @@
+#!/bin/bash
+# cupsadmin postinstall (payload-free pkg): the binary ships in the Scripts archive next to this file.
+# Never changes ownership/permissions of an existing /usr/local/bin (Homebrew on Intel owns it).
+set -euo pipefail
+
+TARGET="${3:-/}"
+DEST_DIR="${TARGET%/}/usr/local/bin"
+SOURCE="$(cd "$(dirname "$0")" && pwd)/cupsadmin"
+
+if [ ! -d "$DEST_DIR" ]; then
+    mkdir -p -m 755 "$DEST_DIR"
+    echo "cupsadmin: created $DEST_DIR"
+fi
+
+# -S: copy to a temp file and rename, so a running cupsadmin is never half-written.
+install -S -m 755 -o root -g wheel "$SOURCE" "$DEST_DIR/cupsadmin"
+echo "cupsadmin: installed $DEST_DIR/cupsadmin"
