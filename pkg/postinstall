@@ -1,32 +1,18 @@
 #!/bin/bash
-# cupsadmin postinstall (payload-free pkg): the CLI binary and CUPS Admin.app ship in the Scripts
-# archive next to this file. Never changes ownership/permissions of an existing /usr/local/bin
-# (Homebrew on Intel owns it) or of /Applications (root:admin 775).
+# cupsadmin postinstall: installs the CLI. The binary ships in the Scripts archive next to this file
+# (not in the payload), so the package never changes ownership/permissions of an existing
+# /usr/local/bin (Homebrew on Intel owns it). CUPS Admin.app is a normal payload with a receipt.
 set -euo pipefail
 
 TARGET="${3:-/}"
 HERE="$(cd "$(dirname "$0")" && pwd)"
-
-# --- CLI -------------------------------------------------------------------------
 DEST_DIR="${TARGET%/}/usr/local/bin"
+
 if [ ! -d "$DEST_DIR" ]; then
     mkdir -p -m 755 "$DEST_DIR"
     echo "cupsadmin: created $DEST_DIR"
 fi
+
 # -S: copy to a temp file and rename, so a running cupsadmin is never half-written.
 install -S -m 755 -o root -g wheel "$HERE/cupsadmin" "$DEST_DIR/cupsadmin"
 echo "cupsadmin: installed $DEST_DIR/cupsadmin"
-
-# --- app -------------------------------------------------------------------------
-if [ -d "$HERE/CUPS Admin.app" ]; then
-    APPS="${TARGET%/}/Applications"
-    STAGE="$APPS/.CUPS Admin.app.installing"
-    rm -rf "$STAGE"
-    ditto "$HERE/CUPS Admin.app" "$STAGE"
-    chown -R root:wheel "$STAGE"
-    chmod -R go-w "$STAGE"
-    # Swap in place so a half-copied bundle is never at the real path.
-    rm -rf "$APPS/CUPS Admin.app"
-    mv "$STAGE" "$APPS/CUPS Admin.app"
-    echo "cupsadmin: installed $APPS/CUPS Admin.app"
-fi

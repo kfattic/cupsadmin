@@ -1,6 +1,8 @@
 #!/bin/bash
-# Universal release build -> signed CLI + signed, notarized, stapled "CUPS Admin.app" -> signed payload-free PKG
-# (postinstall installs /usr/local/bin/cupsadmin and /Applications/CUPS Admin.app) -> notarize -> staple -> spctl.
+# Universal release build -> signed CLI + signed, notarized, stapled "CUPS Admin.app" -> signed PKG
+# (payload: /Applications/CUPS Admin.app; postinstall: /usr/local/bin/cupsadmin) -> notarize -> staple -> spctl.
+# The pkg step needs admin rights once (sudo in Terminal, or an administrator password dialog) to make the
+# staging Applications folder root:admin 775 so the package records the system's real ownership.
 # Usage: ./build.sh               full pipeline (VERSION=1.2.0 ./build.sh to set the version)
 #        ./build.sh --build-only  build CLI and app, ad-hoc signed; no identities, no pkg, no notarization
 #        ./build.sh --screenshots build like --build-only, then regenerate docs/screenshots/app-jobs.png and
@@ -128,7 +130,7 @@ take_screenshots() {
 
 # --- configuration -------------------------------------------------------------
 cd "$(dirname "$0")"
-VERSION="${VERSION:-1.1.0}"
+VERSION="${VERSION:-1.1.1}"
 IDENTIFIER="edu.wku.cupsadmin"
 
 # build.env fills in only what the environment doesn't already set.
@@ -321,42 +323,83 @@ xcrun stapler validate "$APP"
 spctl_check execute "$APP" "$DIST/spctl-app.txt"
 
 # --- build + sign pkg -----------------------------------------------------------
-# Payload-free for the app too: an /Applications payload's "." entry is recorded as root:wheel, but
-# /Applications is root:admin 775 — installing it could take away admins' drag-install rights.
-# pkg/postinstall copies both the CLI and the stapled app instead.
+# App: a normal payload with a receipt. The staging root mirrors the system — "/" root:wheel 755,
+# Applications root:admin 775, the app root:wheel — and pkgbuild --ownership preserve records exactly
+# that, so installing never changes /Applications' ownership. (--ownership recommended would record
+# Applications as root:wheel.) Making files root-owned needs admin rights, once per build.
+# CLI: stays payload-free — the binary rides in Scripts and pkg/postinstall copies it, because a
+# /usr/local/bin payload entry would reset an existing Homebrew-owned /usr/local/bin.
+
+# as_root "<command>": sudo when there's a terminal (or cached credentials), else the standard
+# administrator password dialog. Never stores a password.
+as_root() {
+    if sudo -n true 2>/dev/null || [ -t 0 ]; then
+        sudo /bin/sh -c "$1"
+    else
+        local escaped="${1//\\/\\\\}"
+        escaped="${escaped//\"/\\\"}"
+        osascript -e "do shell script \"$escaped\" with administrator privileges" >/dev/null
+    fi
+}
+
 step "build and sign pkg"
 rm -f "$PKG"
+rm -rf "$SCRIPTS/CUPS Admin.app"
 cp pkg/postinstall "$SCRIPTS/postinstall"
 chmod 755 "$SCRIPTS/postinstall"
-rm -rf "$SCRIPTS/CUPS Admin.app"
-ditto "$APP" "$SCRIPTS/CUPS Admin.app"
-pkgbuild --nopayload --scripts "$SCRIPTS" --identifier "$IDENTIFIER" --version "$VERSION" \
+
+PKGROOT="$PWD/$DIST/pkgroot-$$"
+mkdir -p "$PKGROOT/Applications"
+ditto "$APP" "$PKGROOT/Applications/CUPS Admin.app"
+echo "setting staging ownership (admin rights needed once)"
+# Also removes root-owned staging folders left by earlier builds.
+as_root "find '$PWD/$DIST' -maxdepth 1 -name 'pkgroot-*' ! -name 'pkgroot-$$' -exec rm -rf {} + ; \
+    chown root:wheel '$PKGROOT' && chmod 755 '$PKGROOT' && \
+    chown root:admin '$PKGROOT/Applications' && chmod 775 '$PKGROOT/Applications' && \
+    chown -R root:wheel '$PKGROOT/Applications/CUPS Admin.app' && chmod -R go-w '$PKGROOT/Applications/CUPS Admin.app'" \
+    || { STATUS="ERROR: couldn't set staging ownership (admin rights are needed for the app payload)"; exit 1; }
+
+COMPONENTS="$DIST/components.plist"
+pkgbuild --analyze --root "$PKGROOT" "$COMPONENTS" >/dev/null
+# Install exactly at /Applications/CUPS Admin.app, never "relocated" to another copy LaunchServices knows about.
+plutil -replace 0.BundleIsRelocatable -bool NO "$COMPONENTS"
+plutil -replace 0.BundleOverwriteAction -string upgrade "$COMPONENTS"
+pkgbuild --root "$PKGROOT" --install-location / --ownership preserve --component-plist "$COMPONENTS" \
+    --scripts "$SCRIPTS" --identifier "$IDENTIFIER" --version "$VERSION" \
     --sign "$INSTALLER_SIGN_ID" --timestamp "$PKG"
 pkgutil --check-signature "$PKG"
 
 step "verify pkg contents"
-echo "pkgutil --payload-files $PKG:"
-PAYLOAD_FILES=$(pkgutil --payload-files "$PKG" 2>&1 || true)
-echo "${PAYLOAD_FILES:-(no output)}"
-if [ -n "$(printf '%s' "$PAYLOAD_FILES" | grep -v -i 'no payload' || true)" ]; then
-    STATUS="ERROR: pkg has payload entries; expected none"
-    exit 1
+PAYLOAD_FILES=$(pkgutil --payload-files "$PKG")
+echo "payload: $(echo "$PAYLOAD_FILES" | wc -l | tr -d ' ') entries, top level:"
+echo "$PAYLOAD_FILES" | awk -F/ 'NF <= 3' | sed 's/^/    /'
+if echo "$PAYLOAD_FILES" | grep -v -E '^\.$|^\./Applications$|^\./Applications/CUPS Admin\.app(/|$)' | grep -q .; then
+    STATUS="ERROR: payload contains something other than /Applications/CUPS Admin.app"; exit 1
 fi
 EXPANDED="$DIST/expanded"
 rm -rf "$EXPANDED"
 pkgutil --expand "$PKG" "$EXPANDED"
-# pkgutil --expand unpacks the Scripts archive into a directory.
+BOM_ROOT=$(lsbom "$EXPANDED/Bom" | awk -F'\t' '$1=="."{print $2, $3}')
+BOM_APPS=$(lsbom "$EXPANDED/Bom" | awk -F'\t' '$1=="./Applications"{print $2, $3}')
+BOM_APP=$(lsbom "$EXPANDED/Bom" | awk -F'\t' '$1=="./Applications/CUPS Admin.app"{print $2, $3}')
+echo "BOM: / $BOM_ROOT · /Applications $BOM_APPS · CUPS Admin.app $BOM_APP"
+[ "$BOM_ROOT" = "40755 0/0" ] && [ "$BOM_APPS" = "40775 0/80" ] && [ "$BOM_APP" = "40755 0/0" ] \
+    || { STATUS="ERROR: pkg ownership doesn't match the system (expected / 40755 0/0, /Applications 40775 0/80, app 40755 0/0)"; exit 1; }
 echo "Scripts: $(ls "$EXPANDED/Scripts" | tr '\n' ' ')"
-[ -x "$EXPANDED/Scripts/postinstall" ] && [ -f "$EXPANDED/Scripts/cupsadmin" ] && [ -d "$EXPANDED/Scripts/CUPS Admin.app" ] \
-    || { STATUS="ERROR: Scripts missing postinstall, cupsadmin or CUPS Admin.app"; exit 1; }
+[ -x "$EXPANDED/Scripts/postinstall" ] && [ -f "$EXPANDED/Scripts/cupsadmin" ] && [ ! -e "$EXPANDED/Scripts/CUPS Admin.app" ] \
+    || { STATUS="ERROR: Scripts should hold only postinstall and cupsadmin"; exit 1; }
 codesign --verify --strict "$EXPANDED/Scripts/cupsadmin" \
     || { STATUS="ERROR: binary inside pkg Scripts lost its signature"; exit 1; }
-codesign --verify --deep --strict "$EXPANDED/Scripts/CUPS Admin.app" \
-    || { STATUS="ERROR: app inside pkg Scripts lost its signature"; exit 1; }
-xcrun stapler validate "$EXPANDED/Scripts/CUPS Admin.app" >/dev/null \
-    || { STATUS="ERROR: app inside pkg Scripts lost its stapled ticket"; exit 1; }
-echo "inside pkg: cupsadmin signed ($(lipo -archs "$EXPANDED/Scripts/cupsadmin")), CUPS Admin.app signed and stapled"
 rm -rf "$EXPANDED"
+FULL="$DIST/expanded-full"
+rm -rf "$FULL"
+pkgutil --expand-full "$PKG" "$FULL"
+codesign --verify --deep --strict "$FULL/Payload/Applications/CUPS Admin.app" \
+    || { STATUS="ERROR: app in the payload lost its signature"; exit 1; }
+xcrun stapler validate "$FULL/Payload/Applications/CUPS Admin.app" >/dev/null \
+    || { STATUS="ERROR: app in the payload lost its stapled ticket"; exit 1; }
+echo "inside pkg: CUPS Admin.app signed and stapled (payload), cupsadmin signed (Scripts)"
+rm -rf "$FULL"
 
 # --- notarize + staple pkg ------------------------------------------------------
 step "notarize pkg (uploads to Apple and waits)"
@@ -372,4 +415,4 @@ spctl_check execute "$APP" "$DIST/spctl-app.txt"
 
 echo
 echo "install: sudo installer -pkg $PKG -target /"
-STATUS="OK: $PKG (CLI + CUPS Admin.app) signed, app and pkg notarized, stapled, spctl accepted"
+STATUS="OK: $PKG (app payload + CLI postinstall) signed, app and pkg notarized, stapled, spctl accepted"
