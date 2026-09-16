@@ -114,6 +114,7 @@ take_screenshots() {
             -D "${queue//_/ }" -L "Building A" -o printer-is-shared=false -E 2>&1 | grep -v deprecated || true
     done
     # A Ricoh queue for the Options tab, set to Letter + fit to nearest size (what a US site uses).
+    # Ricoh's filters are Intel-only, so its header also shows "Driver needs Rosetta".
     lpadmin -p Copy_Room -v lpd://127.0.0.1/Copy_Room -P "$RICOH_DEMO_PPD" -D "Copy Room" -L "Building A" \
         -o printer-is-shared=false -o PageSize=Letter -o RIPaperPolicy=NearestSizeAdjust -E 2>&1 | grep -v deprecated || true
     # Held jobs never leave the Mac; owners are generic names, not the person running the build.
@@ -122,6 +123,11 @@ take_screenshots() {
     lp -d Front_Office -U sam -H hold -t "Parking permits.docx" /etc/hosts >/dev/null
     lp -d Front_Office -U alex -H hold -t "Invoice 2291" /etc/hosts >/dev/null
     lp -d Library_Color -U jordan -H hold -t "Event poster" /etc/hosts >/dev/null
+
+    # The Options shot shows the header's "Driver needs Rosetta" row: Ricoh's pstopsRV2 filter is Intel-only.
+    # grep without -q: under pipefail, -q exiting early would kill ppdreport and fail the pipeline.
+    "$BINARY" ppdreport Copy_Room 2>/dev/null | grep '^WARNING: *Driver needs Rosetta' >/dev/null \
+        || { STATUS="ERROR: Copy_Room isn't flagged \"Driver needs Rosetta\" on this Mac, so the Options screenshot wouldn't show the warning"; exit 1; }
 
     SCREEN=$(osascript -e 'tell application "Finder" to get bounds of window of desktop' | tr -d ' ' | tr ',' ' ')
     capture_app Front_Office jobs "$SHOT_JOBS"
@@ -307,7 +313,7 @@ spctl_check() {
     local type="$1" path="$2" log="$3" out
     out=$(spctl -a -vv -t "$type" "$path" 2>&1 || true)
     echo "$out" | tee "$log"
-    echo "$out" | grep -q ': accepted' && echo "$out" | grep -q 'source=Notarized Developer ID' \
+    echo "$out" | grep ': accepted' >/dev/null && echo "$out" | grep 'source=Notarized Developer ID' >/dev/null \
         || { STATUS="ERROR: spctl did not accept $path as Notarized Developer ID"; exit 1; }
 }
 
@@ -373,7 +379,7 @@ step "verify pkg contents"
 PAYLOAD_FILES=$(pkgutil --payload-files "$PKG")
 echo "payload: $(echo "$PAYLOAD_FILES" | wc -l | tr -d ' ') entries, top level:"
 echo "$PAYLOAD_FILES" | awk -F/ 'NF <= 3' | sed 's/^/    /'
-if echo "$PAYLOAD_FILES" | grep -v -E '^\.$|^\./Applications$|^\./Applications/CUPS Admin\.app(/|$)' | grep -q .; then
+if echo "$PAYLOAD_FILES" | grep -v -E '^\.$|^\./Applications$|^\./Applications/CUPS Admin\.app(/|$)' | grep . >/dev/null; then
     STATUS="ERROR: payload contains something other than /Applications/CUPS Admin.app"; exit 1
 fi
 EXPANDED="$DIST/expanded"
