@@ -110,8 +110,8 @@ Or put those three lines (without `export`) in a `build.env` next to `build.sh`;
 - PPD files are world-readable. A locked-print password or login password set as a queue default is stored in plain text; the tool warns before doing that. User codes are accounting codes, not secrets.
 - New queues default to `printer-is-shared=false`. `lpadmin` defaults to shared; this tool doesn't.
 
-## License
+## About
 
-MIT — see `LICENSE`.
+Built at Western Kentucky University by Kurt Fattic to replace the CUPS admin pages for a fleet of about 1,000 Macs, and written with Claude. MIT licensed — see `LICENSE`. Not affiliated with Apple or OpenPrinting.
 
-Built at Western Kentucky University by Kurt Fattic, with Claude. Not affiliated with Apple or OpenPrinting.
+Bug reports and driver profiles for other printers are welcome through [Issues](../../issues) and [Pull Requests](../../pulls).
