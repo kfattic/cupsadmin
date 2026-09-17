@@ -104,8 +104,8 @@ public struct QuickAction: Identifiable, Hashable {
         return resolved.profile.inputs[id]
     }
 
-    /// "User code" (Ricoh) or the profile's label ("User ID" for Xerox).
-    public func inputLabel(_ context: DriverContext) -> String { inputSpec(context)?.label ?? "User code" }
+    /// "User Code" (Ricoh) or the profile's label ("User ID" for Xerox). Shown as written, never re-cased.
+    public func inputLabel(_ context: DriverContext) -> String { inputSpec(context)?.label ?? "User Code" }
 
     /// The optional second value's label ("Account ID (optional)"), or nil when the profile has none.
     public func secondInputLabel(_ context: DriverContext) -> String? { inputSpec(context)?.second?.label }

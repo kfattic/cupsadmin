@@ -56,7 +56,7 @@ private func profileID(_ id: String, _ context: DriverContext) -> String? {
         let clear = try QuickAction.named("usercode")!.resolve(c, clearing: true).get().changes
         #expect(clear.map(\.value) == ["False", "None"])
         // Ricoh takes one value: digits, no second input.
-        #expect(QuickAction.named("usercode")!.inputLabel(c) == "User code")
+        #expect(QuickAction.named("usercode")!.inputLabel(c) == "User Code")
         #expect(QuickAction.named("usercode")!.secondInputLabel(c) == nil)
         #expect(throws: QuickActionUnavailable.self) { try QuickAction.named("usercode")!.resolve(c, value: "4321", secondValue: "9").get() }
     }

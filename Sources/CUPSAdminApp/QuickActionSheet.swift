@@ -180,7 +180,7 @@ struct QuickActionSheet: View {
     @ViewBuilder private var content: some View {
         if model.action.input == .userCode {
             Form {
-                LabeledContent("Current \(model.inputLabel.lowercased())") {
+                LabeledContent("Current \(model.inputLabel)") {
                     HStack(spacing: 8) {
                         if let current = model.currentCode {
                             Text(model.showCurrentCode ? current : String(repeating: "•", count: current.count))
@@ -202,7 +202,7 @@ struct QuickActionSheet: View {
                         .frame(width: 160)
                         .disabled(model.phase != .ready)
                 } label: {
-                    Text("New \(model.inputLabel.lowercased())")
+                    Text("New \(model.inputLabel)")
                     if let error = model.validationError {
                         Text(error).foregroundStyle(.red)
                     }

@@ -52,7 +52,7 @@ enum QuickCommand {
         let before = try await OptionState.load(client: client, queue: queue)
         let context = DriverContext(ppd: before.ppd, attributes: before.snapshot.attributes)
         if let value, let error = action.validationError(value, context: context) {
-            throw CupsAdminError.usage("\(action.inputLabel(context).lowercased()) \(value): \(error)")
+            throw CupsAdminError.usage("\(action.inputLabel(context)) \(value): \(error)")
         }
         if let secondValue, let error = action.secondValidationError(secondValue, context: context) {
             throw CupsAdminError.usage("second value \(secondValue): \(error)")
