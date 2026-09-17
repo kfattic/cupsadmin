@@ -1,5 +1,5 @@
 {
-  "comment": "Quick Action mappings per driver. First matching profile that defines an action AND whose keyword=value pairs this queue supports wins; 'generic' (empty match) must stay last. An action is either one list of pairs (all applied together) or a list of alternative lists. {value} is replaced with the user's input. Find keywords with: cupsadmin ppdreport <queue>",
+  "comment": "Quick Action mappings per driver. First matching profile that defines an action AND whose keyword=value pairs this queue supports wins; 'generic' (empty match) must stay last. An action is either one list of pairs (all applied together) or a list of alternative lists. {value} is replaced with the user's input. 'unavailable' maps an action id to the reason it can't be done with this driver (no later profile is tried). Find keywords with: cupsadmin ppdreport <queue | file.ppd>",
   "profiles": [
     {
       "id": "ricoh-m-c251fw",
@@ -25,6 +25,33 @@
         "duplex": ["Duplex=DuplexNoTumble"],
         "simplex": ["Duplex=None"],
         "letter": ["PageSize=Letter", "RIPaperPolicy=NearestSizeAdjust"]
+      }
+    },
+    {
+      "id": "canon",
+      "name": "Canon UFR II / LIPSLX / CARPS2",
+      "match": { "manufacturer": "^Canon$" },
+      "actions": {
+        "color": ["CNColorMode=color"],
+        "bw": ["CNColorMode=mono"],
+        "duplex": ["CNDuplex=DuplexFront"],
+        "simplex": ["CNDuplex=None"],
+        "letter": ["PageSize=Letter"]
+      },
+      "unavailable": {
+        "usercode": "Canon department IDs are set by the Canon driver, not the PPD"
+      }
+    },
+    {
+      "id": "hp",
+      "name": "HP",
+      "match": { "manufacturer": "^HP$" },
+      "actions": {
+        "color": [["HPColorAsGray=False"], ["HPColorMode=colorsmart"]],
+        "bw": [["HPColorAsGray=True"], ["HPColorMode=grayscale"]]
+      },
+      "unavailable": {
+        "usercode": "HP drivers have no accounting code option"
       }
     },
     {

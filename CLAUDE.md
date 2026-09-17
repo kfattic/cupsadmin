@@ -39,8 +39,10 @@ Private maintainer notes, if present, are in `CLAUDE.local.md` (gitignored).
   from `Resources/driver-profiles.json` (embedded in code — the CLI is a single binary), matched on the
   PPD's `*Manufacturer`/`*NickName`, vendor profiles first and `generic` (standard PPD keywords, IPP
   Everywhere `*-default` attributes) last. A pair is used only if that queue supports the keyword and
-  value; otherwise the action is unavailable with the reason. `cupsadmin ppdreport <queue>` shows a
-  driver's keywords and which actions its profile enables.
+  value; otherwise the action is unavailable with the reason. A profile's `unavailable` map gives
+  the reason an action can't be done with that driver (e.g. Canon department IDs). Use Letter Paper is
+  titled ", Fit to Nearest Size" only when the profile also sets a fit option. `cupsadmin ppdreport
+  <queue | file.ppd[.gz]>` shows a driver's keywords and which actions its profile enables.
 
 ## Build and test
 ```
@@ -67,7 +69,8 @@ swift build                          # debug build of everything
 - Live tests are opt-in and write to queues: `CUPSKIT_LIVE_QUEUE=<queue>`, `CUPSKIT_LIVE_JOBS=<a>,<b>`,
   `CUPSKIT_LIVE_QUICK=<ricoh>,<generic>`. Use throwaway queues (e.g. `lpd://127.0.0.1/…`, paused) and
   delete them afterwards; the live tests restore what they change. Offline tests use vendor PPDs from
-  `/Library/Printers/PPDs` and skip when they aren't installed.
+  `CUPSKIT_PPD_DIRS` (colon-separated, e.g. Canon/HP PPDs extracted with `pkgutil --expand-full`, not
+  installed) and `/Library/Printers/PPDs`, and skip when they aren't there.
 
 ## Conventions
 - **US spelling everywhere** — code, UI, CLI output, docs (color, canceled, gray).

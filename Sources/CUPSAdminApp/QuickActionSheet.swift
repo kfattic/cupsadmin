@@ -45,6 +45,9 @@ final class QuickActionModel: Identifiable {
 
     var currentCode: String? { action.currentCode(context) }
 
+    /// "Use Letter Paper" or "Use Letter Paper, Fit to Nearest Size", depending on the driver.
+    var title: String { action.title(in: state == nil ? nil : context).replacingOccurrences(of: "…", with: "") }
+
     var validationError: String? { action.validationError(code, context: context) }
 
     /// What will be written, or why the action can't run here.
@@ -85,7 +88,7 @@ final class QuickActionModel: Identifiable {
             readBack = Dictionary(uniqueKeysWithValues: outcome.readBack.map { ($0.key, $0) })
             state = try? await OptionState.load(client: store.client, queue: queue)
             let seconds = elapsedText(since: started)
-            let title = clearing ? "Cleared user code" : action.title.replacingOccurrences(of: "…", with: "")
+            let title = clearing ? "Cleared user code" : self.title
             if outcome.succeeded {
                 resultMessage = nil
                 store.report("\(title) on \(queue) in \(seconds)")
@@ -99,7 +102,7 @@ final class QuickActionModel: Identifiable {
             phase = .finished(succeeded: false)
         } catch {
             resultMessage = PrinterStore.explain(String(describing: error))
-            store.report("ERROR: \(action.title) on \(queue): \(error)")
+            store.report("ERROR: \(title) on \(queue): \(error)")
             phase = .finished(succeeded: false)
         }
         store.noteChange(queue: queue)
@@ -114,7 +117,7 @@ struct QuickActionSheet: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
             VStack(alignment: .leading, spacing: 4) {
-                Label(model.action.title.replacingOccurrences(of: "…", with: ""), systemImage: model.action.systemImage)
+                Label(model.title, systemImage: model.action.systemImage)
                     .font(.title3.weight(.semibold))
                 Text("\(model.queue) · saved as the queue default for every user on this Mac")
                     .foregroundStyle(.secondary)

@@ -300,7 +300,7 @@ struct QuickActionItems: View {
         ForEach(QuickAction.all) { action in
             let reason = store.unavailableReason(action, queue: queue)
             Button { choose(action) } label: {
-                Label(action.title, systemImage: action.systemImage)
+                Label(action.title(in: store.drivers[queue]), systemImage: action.systemImage)
             }
             .disabled(reason != nil)
             .help(reason ?? action.summary)

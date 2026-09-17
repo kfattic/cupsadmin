@@ -18,12 +18,13 @@ private func profileID(_ id: String, _ context: DriverContext) -> String? {
 @Suite struct DriverProfileFile {
     @Test func builtInProfilesAreWellFormed() {
         let profiles = DriverProfiles.builtIn
-        #expect(profiles.map(\.id) == ["ricoh-m-c251fw", "ricoh", "generic"])
+        #expect(profiles.map(\.id) == ["ricoh-m-c251fw", "ricoh", "canon", "hp", "generic"])
         #expect(profiles.last?.isGeneric == true)
         #expect(profiles.dropLast().allSatisfy { !$0.isGeneric })
         let known = Set(QuickAction.all.map(\.id)).union(["usercode-clear"])
         for profile in profiles {
             #expect(Set(profile.actions.keys).isSubset(of: known), "\(profile.id): \(profile.actions.keys.sorted())")
+            #expect(Set(profile.unavailable.keys).isSubset(of: known), "\(profile.id): \(profile.unavailable.keys.sorted())")
             for alternatives in profile.actions.values {
                 #expect(alternatives.allSatisfy { !$0.isEmpty && $0.allSatisfy { QuickAction.parse($0) != nil } })
             }
@@ -45,6 +46,7 @@ private func profileID(_ id: String, _ context: DriverContext) -> String? {
         let letter = try QuickAction.named("letter")!.resolve(c).get().changes
         #expect(letter == [OptionChange(key: "PageSize", value: "Letter", isSecret: false),
                            OptionChange(key: "RIPaperPolicy", value: "NearestSizeAdjust", isSecret: false)])
+        #expect(QuickAction.named("letter")!.title(in: c) == "Use Letter Paper, Fit to Nearest Size")
         let code = try QuickAction.named("usercode")!.resolve(c, value: "4321").get().changes
         #expect(code.map(\.value) == ["True", "Custom.4321"])
         let clear = try QuickAction.named("usercode")!.resolve(c, clearing: true).get().changes
@@ -76,6 +78,7 @@ private func profileID(_ id: String, _ context: DriverContext) -> String? {
         // No RIPaperPolicy on this driver: the Ricoh letter mapping doesn't fit, generic Letter does.
         #expect(profileID("letter", c) == "generic")
         #expect(try QuickAction.named("letter")!.resolve(c).get().changes == [OptionChange(key: "PageSize", value: "Letter", isSecret: false)])
+        #expect(QuickAction.named("letter")!.title(in: c) == "Use Letter Paper")
     }
 
     @Test(.enabled(if: hasVendorPPD("RICOH IM C4500")))

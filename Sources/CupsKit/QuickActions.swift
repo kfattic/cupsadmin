@@ -30,8 +30,8 @@ public struct QuickAction: Identifiable, Hashable {
                     summary: "Two-sided, long edge"),
         QuickAction(id: "simplex", title: "Default to Single-Sided", systemImage: "doc", input: .none,
                     summary: "One-sided"),
-        QuickAction(id: "letter", title: "Use Letter Paper, Fit to Nearest Size", systemImage: "arrow.up.left.and.arrow.down.right",
-                    input: .none, summary: "Letter paper, and fit to the nearest size where the driver can (never prompt at the printer)"),
+        QuickAction(id: "letter", title: "Use Letter Paper", systemImage: "arrow.up.left.and.arrow.down.right",
+                    input: .none, summary: "Letter paper, and fit to the nearest size where the driver has that option (never prompt at the printer)"),
         QuickAction(id: "default", title: "Make Default Printer", systemImage: "star", input: .none,
                     summary: "Server default printer (lpadmin -d)"),
     ]
@@ -40,12 +40,25 @@ public struct QuickAction: Identifiable, Hashable {
         all.first { $0.id == id }
     }
 
+    /// The title for a queue: Use Letter Paper gains ", Fit to Nearest Size" only when its driver
+    /// profile also sets a fit-to-paper option (e.g. Ricoh RIPaperPolicy), not just the page size.
+    public func title(in context: DriverContext?) -> String {
+        guard id == "letter", let context, case .success(let resolved) = resolve(context),
+              resolved.changes.contains(where: { !Self.paperSizeKeys.contains($0.key) }) else { return title }
+        return title + ", Fit to Nearest Size"
+    }
+
+    static let paperSizeKeys: Set<String> = ["PageSize", "media-default"]
+
     /// The profile and option changes this action would write on a queue, or why it can't.
     public func resolve(_ context: DriverContext, value: String? = nil, clearing: Bool = false,
                         profiles: [DriverProfile] = DriverProfiles.builtIn) -> Result<ResolvedQuickAction, QuickActionUnavailable> {
         let key = clearing ? id + "-clear" : id
         var firstMissing: String?
         for profile in DriverProfiles.matching(context, in: profiles) {
+            if profile.actions[key] == nil, let reason = profile.unavailable[id] {
+                return .failure(QuickActionUnavailable(reason: reason))
+            }
             guard let alternatives = profile.actions[key] else { continue }
             for pairs in alternatives {
                 let parsed = pairs.compactMap(Self.parse)

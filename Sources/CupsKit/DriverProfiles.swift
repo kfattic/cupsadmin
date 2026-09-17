@@ -52,8 +52,10 @@ public struct DriverProfile: Decodable, Identifiable {
     public let match: Match
     /// Action id -> alternatives, each a list of `keyword=value` pairs applied together.
     public let actions: [String: [[String]]]
+    /// Action id -> why this driver can't do it (e.g. accounting codes set outside the PPD).
+    public let unavailable: [String: String]
 
-    enum CodingKeys: String, CodingKey { case id, name, match, actions }
+    enum CodingKeys: String, CodingKey { case id, name, match, actions, unavailable }
 
     public init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
@@ -65,6 +67,7 @@ public struct DriverProfile: Decodable, Identifiable {
         let raw = try c.decode([String: FlexiblePairs].self, forKey: .actions)
         for (action, pairs) in raw { actions[action] = pairs.alternatives }
         self.actions = actions
+        unavailable = try c.decodeIfPresent([String: String].self, forKey: .unavailable) ?? [:]
     }
 
     private struct FlexiblePairs: Decodable {
