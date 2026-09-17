@@ -25,7 +25,7 @@ public struct QuickAction: Identifiable, Hashable {
         QuickAction(id: "bw", title: "Always Print Black & White", systemImage: "circle.lefthalf.filled", input: .none,
                     summary: "Black & white by default"),
         QuickAction(id: "usercode", title: "Set User Code…", systemImage: "person.badge.key", input: .userCode,
-                    summary: "User/department code sent with every job (--clear to remove)"),
+                    summary: "User/department code sent with every job; Xerox also takes an optional account ID (--clear to remove)"),
         QuickAction(id: "duplex", title: "Default to Duplex", systemImage: "doc.on.doc", input: .none,
                     summary: "Two-sided, long edge"),
         QuickAction(id: "simplex", title: "Default to Single-Sided", systemImage: "doc", input: .none,
@@ -51,7 +51,7 @@ public struct QuickAction: Identifiable, Hashable {
     static let paperSizeKeys: Set<String> = ["PageSize", "media-default"]
 
     /// The profile and option changes this action would write on a queue, or why it can't.
-    public func resolve(_ context: DriverContext, value: String? = nil, clearing: Bool = false,
+    public func resolve(_ context: DriverContext, value: String? = nil, secondValue: String? = nil, clearing: Bool = false,
                         profiles: [DriverProfile] = DriverProfiles.builtIn) -> Result<ResolvedQuickAction, QuickActionUnavailable> {
         let key = clearing ? id + "-clear" : id
         var firstMissing: String?
@@ -67,7 +67,19 @@ public struct QuickAction: Identifiable, Hashable {
                     if firstMissing == nil { firstMissing = "\(missing.0)=\(parsed.first { $0.key == missing.0 }!.value)" }
                     continue
                 }
-                let changes = filled.map { OptionChange(key: $0.0, value: $0.1, isSecret: false) }
+                var changes = filled.map { OptionChange(key: $0.0, value: $0.1, isSecret: false) }
+                if !clearing, let secondValue, !secondValue.isEmpty {
+                    guard let second = profile.inputs[id]?.second else {
+                        return .failure(QuickActionUnavailable(reason: "\(profile.name) takes one value for \(id), not two"))
+                    }
+                    for pair in second.pairs.compactMap(Self.parse) {
+                        let value = pair.value.replacingOccurrences(of: "{value2}", with: secondValue)
+                        guard context.supports(key: pair.key, value: value) else {
+                            return .failure(QuickActionUnavailable(reason: "Not available for \(context.driverName) (no \(pair.key)=\(pair.value))"))
+                        }
+                        changes.append(OptionChange(key: pair.key, value: value, isSecret: false))
+                    }
+                }
                 return .success(ResolvedQuickAction(profile: profile, changes: changes))
             }
         }
@@ -86,13 +98,40 @@ public struct QuickAction: Identifiable, Hashable {
 
     public func isAvailable(in context: DriverContext) -> Bool { unavailableReason(in: context) == nil }
 
-    /// For Set User Code: digits only, within the PPD's limit for the code option. nil when valid.
+    /// The profile's input settings for this action on this queue (label, digits, second value).
+    public func inputSpec(_ context: DriverContext) -> DriverProfile.Input? {
+        guard input == .userCode, case .success(let resolved) = resolve(context, value: "0") else { return nil }
+        return resolved.profile.inputs[id]
+    }
+
+    /// "User code" (Ricoh) or the profile's label ("User ID" for Xerox).
+    public func inputLabel(_ context: DriverContext) -> String { inputSpec(context)?.label ?? "User code" }
+
+    /// The optional second value's label ("Account ID (optional)"), or nil when the profile has none.
+    public func secondInputLabel(_ context: DriverContext) -> String? { inputSpec(context)?.second?.label }
+
+    public func digitsOnly(_ context: DriverContext) -> Bool { inputSpec(context)?.digitsOnly ?? true }
+
+    /// For Set User Code: digits only unless the profile allows text, within the PPD's limit. nil when valid.
     public func validationError(_ value: String, context: DriverContext) -> String? {
         guard input == .userCode, !value.isEmpty else { return nil }
-        guard value.allSatisfy({ ("0"..."9").contains($0) }) else { return "Digits only" }
-        if let keyword = codeKeyword(context),
-           let max = context.ppd?.option(keyword)?.customParameters.first.flatMap({ Int($0.maximum) }), value.count > max {
-            return "At most \(max) digits"
+        return Self.valueError(value, digitsOnly: digitsOnly(context), keyword: codeKeyword(context), context: context)
+    }
+
+    /// For the optional second value (text, within the PPD's limit). nil when valid.
+    public func secondValidationError(_ value: String, context: DriverContext) -> String? {
+        guard input == .userCode, !value.isEmpty else { return nil }
+        return Self.valueError(value, digitsOnly: false, keyword: secondKeyword(context), context: context)
+    }
+
+    private static func valueError(_ value: String, digitsOnly: Bool, keyword: String?, context: DriverContext) -> String? {
+        if digitsOnly {
+            guard value.allSatisfy({ ("0"..."9").contains($0) }) else { return "Digits only" }
+        } else if value.contains(where: { $0 == "\"" || $0 == "'" || $0 == "\\" || $0.isNewline }) {
+            return "No quotes, backslashes or line breaks"
+        }
+        if let keyword, let max = context.ppd?.option(keyword)?.customParameters.first.flatMap({ Int($0.maximum) }), value.count > max {
+            return "At most \(max) \(digitsOnly ? "digits" : "characters")"
         }
         return nil
     }
@@ -102,6 +141,17 @@ public struct QuickAction: Identifiable, Hashable {
         guard let keyword = codeKeyword(context),
               let value = context.ppd?.option(keyword)?.defaultChoice, value.hasPrefix("Custom.") else { return nil }
         return String(value.dropFirst("Custom.".count))
+    }
+
+    /// The second value currently set on the queue (e.g. the Xerox account ID), without Custom.
+    public func currentSecondValue(_ context: DriverContext) -> String? {
+        guard let keyword = secondKeyword(context),
+              let value = context.ppd?.option(keyword)?.defaultChoice, value.hasPrefix("Custom.") else { return nil }
+        return String(value.dropFirst("Custom.".count))
+    }
+
+    private func secondKeyword(_ context: DriverContext) -> String? {
+        inputSpec(context)?.second?.pairs.compactMap(Self.parse).first { $0.value.contains("{value2}") }?.key
     }
 
     /// The option that receives `{value}` for this queue's profile (e.g. RIUserCode).
@@ -139,14 +189,15 @@ public struct QuickActionOutcome {
 
 extension QuickAction {
     /// Runs the action on a queue with read-back. Throws QuickActionUnavailable when no profile fits.
-    public func run(queue: String, value: String? = nil, clearing: Bool = false, client: CupsClient) async throws -> QuickActionOutcome {
+    public func run(queue: String, value: String? = nil, secondValue: String? = nil, clearing: Bool = false,
+                    client: CupsClient) async throws -> QuickActionOutcome {
         if isDefaultPrinter {
             let outcome = try await QueueActions.setDefault(queue: queue, client: client)
             return QuickActionOutcome(command: outcome.command, succeeded: outcome.succeeded, profile: nil,
                                       readBack: [], changes: [], message: outcome.message)
         }
         let context = try await DriverContext.load(client: client, queue: queue)
-        let resolved = try resolve(context, value: value, clearing: clearing).get()
+        let resolved = try resolve(context, value: value, secondValue: secondValue, clearing: clearing).get()
         let (result, readBack, _) = try await OptionApplier.apply(client: client, queue: queue, changes: resolved.changes)
         let failed = readBack.filter { !$0.applied }
         return QuickActionOutcome(command: OptionApplier.displayCommand(queue: queue, changes: resolved.changes),

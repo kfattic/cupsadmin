@@ -14,6 +14,8 @@ final class QuickActionModel: Identifiable {
     let action: QuickAction
     let queue: String
     var code = ""
+    /// Optional second value (Xerox account ID), when the driver profile has one.
+    var secondValue = ""
     var showCurrentCode = false
     private(set) var phase: Phase = .loading
     private(set) var state: OptionState?
@@ -50,9 +52,15 @@ final class QuickActionModel: Identifiable {
 
     var validationError: String? { action.validationError(code, context: context) }
 
+    var inputLabel: String { action.inputLabel(context) }
+    var secondInputLabel: String? { action.secondInputLabel(context) }
+    var currentSecondValue: String? { action.currentSecondValue(context) }
+    var secondValidationError: String? { action.secondValidationError(secondValue, context: context) }
+
     /// What will be written, or why the action can't run here.
     func plannedChanges(clearing: Bool = false) -> Result<[OptionChange], QuickActionUnavailable> {
-        action.resolve(context, value: clearing ? nil : code, clearing: clearing).map(\.changes)
+        action.resolve(context, value: clearing ? nil : code, secondValue: clearing ? nil : secondValue,
+                       clearing: clearing).map(\.changes)
     }
 
     /// "Ricoh", "Generic (…)" — which driver profile supplied the keywords.
@@ -83,7 +91,9 @@ final class QuickActionModel: Identifiable {
         phase = .running
         let started = Date()
         do {
-            let outcome = try await action.run(queue: queue, value: action.input == .userCode && !clearing ? code : nil,
+            let typed = action.input == .userCode && !clearing
+            let outcome = try await action.run(queue: queue, value: typed ? code : nil,
+                                               secondValue: typed && !secondValue.isEmpty ? secondValue : nil,
                                                clearing: clearing, client: store.client)
             readBack = Dictionary(uniqueKeysWithValues: outcome.readBack.map { ($0.key, $0) })
             state = try? await OptionState.load(client: store.client, queue: queue)
@@ -161,7 +171,7 @@ struct QuickActionSheet: View {
     private var canApply: Bool {
         guard model.phase == .ready else { return false }
         if model.action.input == .userCode {
-            return !model.code.isEmpty && model.validationError == nil
+            return !model.code.isEmpty && model.validationError == nil && model.secondValidationError == nil
         }
         if case .failure = model.plannedChanges() { return false }
         return true
@@ -170,7 +180,7 @@ struct QuickActionSheet: View {
     @ViewBuilder private var content: some View {
         if model.action.input == .userCode {
             Form {
-                LabeledContent("Current code") {
+                LabeledContent("Current \(model.inputLabel.lowercased())") {
                     HStack(spacing: 8) {
                         if let current = model.currentCode {
                             Text(model.showCurrentCode ? current : String(repeating: "•", count: current.count))
@@ -184,22 +194,39 @@ struct QuickActionSheet: View {
                     }
                 }
                 LabeledContent {
-                    TextField("User code", text: $model.code, prompt: Text("Digits"))
+                    TextField(model.inputLabel, text: $model.code,
+                              prompt: model.action.digitsOnly(model.context) ? Text("Digits") : nil)
                         .labelsHidden()
                         .textFieldStyle(.roundedBorder)
                         .monospacedDigit()
                         .frame(width: 160)
                         .disabled(model.phase != .ready)
                 } label: {
-                    Text("New code")
+                    Text("New \(model.inputLabel.lowercased())")
                     if let error = model.validationError {
                         Text(error).foregroundStyle(.red)
+                    }
+                }
+                if let secondLabel = model.secondInputLabel {
+                    LabeledContent {
+                        TextField(secondLabel, text: $model.secondValue, prompt: model.currentSecondValue.map { Text($0) })
+                            .labelsHidden()
+                            .textFieldStyle(.roundedBorder)
+                            .frame(width: 160)
+                            .disabled(model.phase != .ready)
+                    } label: {
+                        Text(secondLabel)
+                        if let error = model.secondValidationError {
+                            Text(error).foregroundStyle(.red)
+                        } else if model.currentSecondValue != nil {
+                            Text("Current value shown in the field").foregroundStyle(.secondary)
+                        }
                     }
                 }
             }
             .formStyle(.grouped)
             .scrollDisabled(true)
-            .frame(height: 130)
+            .frame(height: model.secondInputLabel == nil ? 130 : 190)
         }
 
         if model.action.isDefaultPrinter {

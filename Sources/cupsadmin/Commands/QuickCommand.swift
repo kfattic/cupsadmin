@@ -5,7 +5,7 @@ enum QuickCommand {
     static func run(client: CupsClient, args: [String], clear: Bool) async throws -> String {
         guard let name = args.first else {
             printTable(headers: ["ACTION", "VALUE", "WHAT IT SETS"], rows: QuickAction.all.map {
-                [$0.id, $0.input == .userCode ? "<code> | --clear" : "", $0.summary]
+                [$0.id, $0.input == .userCode ? "<code> [account] | --clear" : "", $0.summary]
             })
             print("\nDriver profiles (first match wins, generic last): "
                   + DriverProfiles.builtIn.map(\.id).joined(separator: ", "))
@@ -18,6 +18,7 @@ enum QuickCommand {
         guard args.count >= 2 else { throw CupsAdminError.usage("quick \(name) needs a queue name") }
         let queue = args[1]
         let value: String?
+        var secondValue: String?
         switch action.input {
         case .none:
             guard args.count == 2, !clear else { throw CupsAdminError.usage("quick \(name) takes only a queue name") }
@@ -27,8 +28,11 @@ enum QuickCommand {
                 guard args.count == 2 else { throw CupsAdminError.usage("use a code or --clear, not both") }
                 value = nil
             } else {
-                guard args.count == 3 else { throw CupsAdminError.usage("quick \(name) needs a code (digits) or --clear") }
+                guard args.count == 3 || args.count == 4 else {
+                    throw CupsAdminError.usage("quick \(name) needs a code (and, for Xerox, an optional account ID) or --clear")
+                }
                 value = args[2]
+                secondValue = args.count == 4 ? args[3] : nil
             }
         }
         guard try await client.queueExists(queue) else { throw CupsAdminError.failed("no such queue \(queue)") }
@@ -48,10 +52,13 @@ enum QuickCommand {
         let before = try await OptionState.load(client: client, queue: queue)
         let context = DriverContext(ppd: before.ppd, attributes: before.snapshot.attributes)
         if let value, let error = action.validationError(value, context: context) {
-            throw CupsAdminError.usage("user code \(value): \(error)")
+            throw CupsAdminError.usage("\(action.inputLabel(context).lowercased()) \(value): \(error)")
+        }
+        if let secondValue, let error = action.secondValidationError(secondValue, context: context) {
+            throw CupsAdminError.usage("second value \(secondValue): \(error)")
         }
         let resolved: ResolvedQuickAction
-        switch action.resolve(context, value: value, clearing: clear) {
+        switch action.resolve(context, value: value, secondValue: secondValue, clearing: clear) {
         case .success(let r): resolved = r
         case .failure(let unavailable): throw CupsAdminError.failed("\(action.id) on \(queue): \(unavailable.reason)")
         }

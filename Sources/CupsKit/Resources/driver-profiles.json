@@ -1,5 +1,5 @@
 {
-  "comment": "Quick Action mappings per driver. First matching profile that defines an action AND whose keyword=value pairs this queue supports wins; 'generic' (empty match) must stay last. An action is either one list of pairs (all applied together) or a list of alternative lists. {value} is replaced with the user's input. 'unavailable' maps an action id to the reason it can't be done with this driver (no later profile is tried). Find keywords with: cupsadmin ppdreport <queue | file.ppd>",
+  "comment": "Quick Action mappings per driver. First matching profile that defines an action AND whose keyword=value pairs this queue supports wins; 'generic' (empty match) must stay last. An action is either one list of pairs (all applied together) or a list of alternative lists. {value} is replaced with the user's input. 'inputs' can relabel an action's typed value (digitsOnly defaults to true) and add an optional second value ({value2}) with its own pairs. 'unavailable' maps an action id to the reason it can't be done with this driver (no later profile is tried). Find keywords with: cupsadmin ppdreport <queue | file.ppd>",
   "profiles": [
     {
       "id": "ricoh-m-c251fw",
@@ -52,6 +52,37 @@
       },
       "unavailable": {
         "usercode": "HP drivers have no accounting code option"
+      }
+    },
+    {
+      "id": "xerox",
+      "name": "Xerox",
+      "match": { "manufacturer": "^Xerox$" },
+      "actions": {
+        "color": [["XROutputColor=PrintAsColor"], ["XRColorCorrection=Auto"]],
+        "bw": [["XROutputColor=PrintAsGrayscale"], ["XRColorCorrection=Gray"]],
+        "usercode": ["XRAccountingSystem=XSA", "AcctUserID=Custom.{value}"],
+        "usercode-clear": ["XRAccountingSystem=None", "AcctUserID=None", "AcctAccountID=None"]
+      },
+      "inputs": {
+        "usercode": {
+          "label": "User ID",
+          "digitsOnly": false,
+          "second": { "label": "Account ID (optional)", "pairs": ["AcctAccountID=Custom.{value2}"] }
+        }
+      }
+    },
+    {
+      "id": "konica-minolta",
+      "name": "Konica Minolta",
+      "match": { "manufacturer": "^KONICA MINOLTA$" },
+      "actions": {
+        "duplex": ["KMDuplex=Double"],
+        "simplex": ["KMDuplex=Single"],
+        "letter": ["PageSize=8.5x11"]
+      },
+      "unavailable": {
+        "usercode": "Konica Minolta Account Track codes are set by the driver, not the PPD"
       }
     },
     {

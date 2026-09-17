@@ -54,8 +54,25 @@ public struct DriverProfile: Decodable, Identifiable {
     public let actions: [String: [[String]]]
     /// Action id -> why this driver can't do it (e.g. accounting codes set outside the PPD).
     public let unavailable: [String: String]
+    /// Action id -> how its typed value is labeled and checked, plus an optional second value.
+    public let inputs: [String: Input]
 
-    enum CodingKeys: String, CodingKey { case id, name, match, actions, unavailable }
+    public struct Input: Decodable {
+        /// "User ID"; nil keeps the default "User code".
+        public let label: String?
+        /// Default true (Ricoh user codes). Xerox user IDs are strings.
+        public let digitsOnly: Bool?
+        public let second: SecondInput?
+    }
+
+    /// An optional extra value, e.g. Xerox Standard Accounting's account ID. Its pairs use `{value2}`
+    /// and are added only when the user fills it in.
+    public struct SecondInput: Decodable {
+        public let label: String
+        public let pairs: [String]
+    }
+
+    enum CodingKeys: String, CodingKey { case id, name, match, actions, unavailable, inputs }
 
     public init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
@@ -68,6 +85,7 @@ public struct DriverProfile: Decodable, Identifiable {
         for (action, pairs) in raw { actions[action] = pairs.alternatives }
         self.actions = actions
         unavailable = try c.decodeIfPresent([String: String].self, forKey: .unavailable) ?? [:]
+        inputs = try c.decodeIfPresent([String: Input].self, forKey: .inputs) ?? [:]
     }
 
     private struct FlexiblePairs: Decodable {

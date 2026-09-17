@@ -40,7 +40,8 @@ Private maintainer notes, if present, are in `CLAUDE.local.md` (gitignored).
   PPD's `*Manufacturer`/`*NickName`, vendor profiles first and `generic` (standard PPD keywords, IPP
   Everywhere `*-default` attributes) last. A pair is used only if that queue supports the keyword and
   value; otherwise the action is unavailable with the reason. A profile's `unavailable` map gives
-  the reason an action can't be done with that driver (e.g. Canon department IDs). Use Letter Paper is
+  the reason an action can't be done with that driver (e.g. Canon department IDs); its `inputs` map relabels
+  the typed value and can add an optional second value (`{value2}`, e.g. the Xerox account ID). Use Letter Paper is
   titled ", Fit to Nearest Size" only when the profile also sets a fit option. `cupsadmin ppdreport
   <queue | file.ppd[.gz]>` shows a driver's keywords and which actions its profile enables.
 

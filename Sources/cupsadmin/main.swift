@@ -40,7 +40,7 @@ let usage = """
       set <queue> [-o key=value ...] [-v uri] [-D description] [-L location] [-m model | -P ppd]
                                  change a queue via lpadmin, then show before/after
       quick                      list quick actions (task-named queue defaults)
-      quick <action> <queue> [code | --clear]
+      quick <action> <queue> [code [account] | --clear]
                                  apply one via lpadmin, then verify
       ppdreport <queue | path.ppd[.gz]>
                                  every PPD group and option: keyword, label, type, default, choices

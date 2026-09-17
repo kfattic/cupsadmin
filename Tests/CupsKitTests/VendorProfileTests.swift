@@ -146,3 +146,98 @@ private func hasChoice(_ c: DriverContext, _ keyword: String, _ choice: String) 
         #expect(hpColor > 0)
     }
 }
+
+@Suite struct XeroxProfile {
+    static let altaLink = "Xerox AltaLink C8170.gz"
+    static let monoVersaLink = "Xerox VersaLink B620 Printer.gz"
+
+    @Test(.enabled(if: ExtraPPDs.path(altaLink) != nil))
+    func altaLinkColorAndStandardAccounting() throws {
+        let c = try #require(ExtraPPDs.context(Self.altaLink))
+        #expect(DriverProfiles.matching(c).map(\.id) == ["xerox", "generic"])
+        #expect(pairs("color", c) == ["XROutputColor=PrintAsColor"])
+        #expect(pairs("bw", c) == ["XROutputColor=PrintAsGrayscale"])
+        #expect(resolved("duplex", c)?.profile.id == "generic" && pairs("duplex", c) == ["Duplex=DuplexNoTumble"])
+        #expect(resolved("letter", c)?.profile.id == "generic" && pairs("letter", c) == ["PageSize=Letter"])
+        #expect(QuickAction.named("letter")!.title(in: c) == "Use Letter Paper")
+
+        let usercode = QuickAction.named("usercode")!
+        #expect(usercode.inputLabel(c) == "User ID")
+        #expect(usercode.secondInputLabel(c) == "Account ID (optional)")
+        #expect(!usercode.digitsOnly(c))
+        #expect(try usercode.resolve(c, value: "jdoe").get().changes.map { "\($0.key)=\($0.value)" }
+                == ["XRAccountingSystem=XSA", "AcctUserID=Custom.jdoe"])
+        #expect(try usercode.resolve(c, value: "jdoe", secondValue: "").get().changes.count == 2)
+        #expect(try usercode.resolve(c, value: "jdoe", secondValue: "ART101").get().changes.map { "\($0.key)=\($0.value)" }
+                == ["XRAccountingSystem=XSA", "AcctUserID=Custom.jdoe", "AcctAccountID=Custom.ART101"])
+        #expect(try usercode.resolve(c, clearing: true).get().changes.map { "\($0.key)=\($0.value)" }
+                == ["XRAccountingSystem=None", "AcctUserID=None", "AcctAccountID=None"])
+
+        #expect(usercode.validationError("jdoe", context: c) == nil)
+        #expect(usercode.validationError(String(repeating: "a", count: 33), context: c) == "At most 32 characters")
+        #expect(usercode.validationError("j\"doe", context: c) == "No quotes, backslashes or line breaks")
+        #expect(usercode.secondValidationError("ART101", context: c) == nil)
+        #expect(usercode.secondValidationError(String(repeating: "9", count: 33), context: c) == "At most 32 characters")
+    }
+
+    @Test(.enabled(if: ExtraPPDs.path(monoVersaLink) != nil))
+    func versaLinkWithoutXROutputColorFallsBackToColorCorrection() throws {
+        let c = try #require(ExtraPPDs.context(Self.monoVersaLink))
+        #expect(pairs("bw", c) == ["XRColorCorrection=Gray"])
+        #expect(resolved("bw", c)?.profile.id == "xerox")
+        #expect(!QuickAction.named("color")!.isAvailable(in: c))   // mono: Gray is the only choice
+        #expect(QuickAction.named("usercode")!.isAvailable(in: c))
+    }
+
+    /// Every Xerox PPD in the package: each action is offered exactly when the PPD has what the profile needs.
+    @Test(.enabled(if: ExtraPPDs.files(prefix: "Xerox ").count > 100))
+    func everyXeroxPPD() throws {
+        var accounting = 0
+        for file in ExtraPPDs.files(prefix: "Xerox ") {
+            let c = try #require(ExtraPPDs.context(path: file), "\(file)")
+            let name = (file as NSString).lastPathComponent
+            #expect(DriverProfiles.matching(c).first?.id == "xerox", "\(name)")
+            #expect(QuickAction.named("color")!.isAvailable(in: c)
+                    == (hasChoice(c, "XROutputColor", "PrintAsColor") || hasChoice(c, "XRColorCorrection", "Auto")), "\(name)")
+            #expect(QuickAction.named("bw")!.isAvailable(in: c)
+                    == (hasChoice(c, "XROutputColor", "PrintAsGrayscale") || hasChoice(c, "XRColorCorrection", "Gray")), "\(name)")
+            let xsa = hasChoice(c, "XRAccountingSystem", "XSA") && c.ppd?.option("AcctUserID")?.customParameters.isEmpty == false
+            #expect(QuickAction.named("usercode")!.isAvailable(in: c) == xsa, "\(name)")
+            if xsa { accounting += 1 }
+        }
+        #expect(accounting > 0)
+    }
+}
+
+@Suite struct KonicaMinoltaProfile {
+    static let bizhub = "KONICAMINOLTAC651i.gz"
+    static let reason = "Konica Minolta Account Track codes are set by the driver, not the PPD"
+
+    @Test(.enabled(if: ExtraPPDs.path(bizhub) != nil))
+    func bizhubC651i() throws {
+        let c = try #require(ExtraPPDs.context(Self.bizhub))
+        #expect(DriverProfiles.matching(c).map(\.id) == ["konica-minolta", "generic"])
+        #expect(pairs("color", c) == ["ColorModel=CMYK"] && resolved("color", c)?.profile.id == "generic")
+        #expect(pairs("bw", c) == ["ColorModel=Gray"])
+        #expect(pairs("duplex", c) == ["KMDuplex=Double"] && resolved("duplex", c)?.profile.id == "konica-minolta")
+        #expect(pairs("simplex", c) == ["KMDuplex=Single"])
+        #expect(pairs("letter", c) == ["PageSize=8.5x11"])
+        #expect(QuickAction.named("letter")!.title(in: c) == "Use Letter Paper")
+        #expect(QuickAction.named("usercode")!.unavailableReason(in: c) == Self.reason)
+    }
+
+    /// Every bizhub PPD found (i and xi, plus the 1-sided "S" variants).
+    @Test(.enabled(if: !ExtraPPDs.files(prefix: "KONICAMINOLTA").isEmpty))
+    func everyKonicaMinoltaPPD() throws {
+        for file in ExtraPPDs.files(prefix: "KONICAMINOLTA") {
+            let c = try #require(ExtraPPDs.context(path: file), "\(file)")
+            let name = (file as NSString).lastPathComponent
+            #expect(DriverProfiles.matching(c).first?.id == "konica-minolta", "\(name)")
+            #expect(QuickAction.named("duplex")!.isAvailable(in: c) == hasChoice(c, "KMDuplex", "Double"), "\(name)")
+            #expect(QuickAction.named("simplex")!.isAvailable(in: c) == hasChoice(c, "KMDuplex", "Single"), "\(name)")
+            #expect(QuickAction.named("letter")!.isAvailable(in: c) == hasChoice(c, "PageSize", "8.5x11"), "\(name)")
+            #expect(QuickAction.named("bw")!.isAvailable(in: c) == hasChoice(c, "ColorModel", "Gray"), "\(name)")
+            #expect(QuickAction.named("usercode")!.unavailableReason(in: c) == Self.reason, "\(name)")
+        }
+    }
+}

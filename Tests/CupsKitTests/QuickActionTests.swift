@@ -18,13 +18,17 @@ private func profileID(_ id: String, _ context: DriverContext) -> String? {
 @Suite struct DriverProfileFile {
     @Test func builtInProfilesAreWellFormed() {
         let profiles = DriverProfiles.builtIn
-        #expect(profiles.map(\.id) == ["ricoh-m-c251fw", "ricoh", "canon", "hp", "generic"])
+        #expect(profiles.map(\.id) == ["ricoh-m-c251fw", "ricoh", "canon", "hp", "xerox", "konica-minolta", "generic"])
         #expect(profiles.last?.isGeneric == true)
         #expect(profiles.dropLast().allSatisfy { !$0.isGeneric })
         let known = Set(QuickAction.all.map(\.id)).union(["usercode-clear"])
         for profile in profiles {
             #expect(Set(profile.actions.keys).isSubset(of: known), "\(profile.id): \(profile.actions.keys.sorted())")
             #expect(Set(profile.unavailable.keys).isSubset(of: known), "\(profile.id): \(profile.unavailable.keys.sorted())")
+            #expect(Set(profile.inputs.keys).isSubset(of: Set(QuickAction.all.filter { $0.input != .none }.map(\.id))))
+            for input in profile.inputs.values {
+                #expect(input.second.map { !$0.pairs.isEmpty && $0.pairs.allSatisfy { QuickAction.parse($0) != nil } } ?? true)
+            }
             for alternatives in profile.actions.values {
                 #expect(alternatives.allSatisfy { !$0.isEmpty && $0.allSatisfy { QuickAction.parse($0) != nil } })
             }
@@ -51,6 +55,10 @@ private func profileID(_ id: String, _ context: DriverContext) -> String? {
         #expect(code.map(\.value) == ["True", "Custom.4321"])
         let clear = try QuickAction.named("usercode")!.resolve(c, clearing: true).get().changes
         #expect(clear.map(\.value) == ["False", "None"])
+        // Ricoh takes one value: digits, no second input.
+        #expect(QuickAction.named("usercode")!.inputLabel(c) == "User code")
+        #expect(QuickAction.named("usercode")!.secondInputLabel(c) == nil)
+        #expect(throws: QuickActionUnavailable.self) { try QuickAction.named("usercode")!.resolve(c, value: "4321", secondValue: "9").get() }
     }
 
     @Test(.enabled(if: hasVendorPPD("RICOH MP 5055")))

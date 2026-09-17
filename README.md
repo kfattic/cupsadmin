@@ -48,6 +48,7 @@ The things admins actually do, without knowing the driver's option keywords:
 cupsadmin quick color <queue>          # always print in color
 cupsadmin quick bw <queue>             # always print black & white
 cupsadmin quick usercode <queue> 12345 # set a Ricoh user code (enables it too)
+cupsadmin quick usercode <queue> jdoe ART101  # Xerox Standard Accounting: user ID, optional account ID
 cupsadmin quick duplex <queue>         # default to two-sided
 cupsadmin quick simplex <queue>
 cupsadmin quick letter <queue>         # Letter paper; also fit to nearest size where the driver can (Ricoh)
@@ -67,13 +68,15 @@ Which keywords an action writes comes from a driver profile (`Sources/CupsKit/Re
 | Any other PPD, IPP Everywhere / AirPrint | ✓ color, black & white, duplex, Letter where the queue supports them (generic) |
 | Canon UFR II / LIPSLX / CARPS2 | ✓ color, black & white (color models), duplex, Letter (no fit-to-page option); department IDs are set in the Canon driver, not the PPD |
 | HP (`HPColorAsGray` or `HPColorMode` drivers) | ✓ color, black & white, duplex, Letter (no fit-to-page option); no accounting code option |
-| Xerox, Konica Minolta and others | generic only — add a profile (below) |
+| Xerox (AltaLink, VersaLink and others) | ✓ color, black & white, duplex, Letter (no fit-to-page option), user ID + optional account ID (Xerox Standard Accounting) |
+| Konica Minolta bizhub C-series i / xi | ✓ color, black & white, duplex, Letter (no fit-to-page option); Account Track codes are set in the driver, not the PPD |
+| Others | generic only — add a profile (below) |
 
 ### Adding your printer's driver
 
 1. `cupsadmin ppdreport <queue>` (or `ppdreport <file.ppd.gz>` for a PPD from a driver package you haven't installed — `pkgutil --expand-full` it first) lists every option your driver has; find the color, duplex, paper and accounting/user-code keywords and their choice values.
 2. Copy the `ricoh` entry in `Sources/CupsKit/Resources/driver-profiles.json`, give it an `id`, and set `match` to regular expressions for your PPD's `Manufacturer` and `NickName` (both are printed at the top of the report).
-3. Replace the `keyword=value` pairs. `{value}` is the code the user types; typed options take `Custom.{value}`. Leave out actions your driver can't do, or explain why under `unavailable`. Keep your profile above `generic`.
+3. Replace the `keyword=value` pairs. `{value}` is the code the user types; typed options take `Custom.{value}`. Leave out actions your driver can't do, or explain why under `unavailable`. `inputs` relabels the typed value and can add an optional second one (see the `xerox` entry). Keep your profile above `generic`.
 4. `swift build && .build/debug/cupsadmin ppdreport <queue>` shows which quick actions are now available; try one with `cupsadmin quick`, then open a pull request.
 
 ## How it works
