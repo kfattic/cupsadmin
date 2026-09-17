@@ -72,6 +72,8 @@ Which keywords an action writes comes from a driver profile (`Sources/CupsKit/Re
 | Konica Minolta bizhub C-series i / xi | ✓ color, black & white, duplex, Letter (no fit-to-page option); Account Track codes are set in the driver, not the PPD |
 | Others | generic only — add a profile (below) |
 
+Xerox and Konica Minolta profiles are tested against the vendor PPDs, not yet against a printer — reports welcome.
+
 ### Adding your printer's driver
 
 1. `cupsadmin ppdreport <queue>` (or `ppdreport <file.ppd.gz>` for a PPD from a driver package you haven't installed — `pkgutil --expand-full` it first) lists every option your driver has; find the color, duplex, paper and accounting/user-code keywords and their choice values.
