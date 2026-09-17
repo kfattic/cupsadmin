@@ -68,7 +68,7 @@ swift build                          # debug build of everything
   verifies both BOM ownership entries. The app is notarized and stapled before packaging; the PKG after.
 - The app icon master is `Icon/AppIcon-1024.png`; `build.sh` generates `AppIcon.icns` from it. Don't redraw it.
 - Live tests are opt-in and write to queues: `CUPSKIT_LIVE_QUEUE=<queue>`, `CUPSKIT_LIVE_JOBS=<a>,<b>`,
-  `CUPSKIT_LIVE_QUICK=<ricoh>,<generic>`. Use throwaway queues (e.g. `lpd://127.0.0.1/…`, paused) and
+  `CUPSKIT_LIVE_QUICK=<ricoh>,<generic>`, `CUPSKIT_LIVE_DELETE=1` (deletes a queue name that never existed; writes nothing). Use throwaway queues (e.g. `lpd://127.0.0.1/…`, paused) and
   delete them afterwards; the live tests restore what they change. Offline tests use vendor PPDs from
   `CUPSKIT_PPD_DIRS` (colon-separated, e.g. Canon/HP PPDs extracted with `pkgutil --expand-full`, not
   installed) and `/Library/Printers/PPDs`, and skip when they aren't there.

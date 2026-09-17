@@ -251,7 +251,7 @@ final class PrinterStore {
             deleted = outcome.succeeded
             if deleted {
                 report("Deleted \(queue) in \(elapsedText(since: started))")
-                log.info("deleted \(queue, privacy: .public)")
+                log.info("deleted \(queue, privacy: .public)\(outcome.message.map { " (\($0))" } ?? "", privacy: .public)")
             } else {
                 report("ERROR: delete \(queue): \(outcome.message ?? "failed")")
                 fail("Couldn’t delete \(queue)", "\(outcome.message ?? "failed")\n\n\(outcome.command)")

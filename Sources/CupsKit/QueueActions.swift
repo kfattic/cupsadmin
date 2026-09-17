@@ -222,12 +222,21 @@ extension QueueActions {
     /// `lpadmin -x queue`, verified by the queue being gone.
     public static func delete(queue: String, client: CupsClient) async throws -> ActionOutcome {
         let result = try await Task.detached { try CupsTools.delete(queue: queue) }.value
-        guard result.succeeded else {
-            return ActionOutcome(succeeded: false, command: result.commandLine, message: result.message.isEmpty ? "exited \(result.status)" : result.message)
+        return deleteOutcome(queue: queue, result: result, stillExists: try await client.queueExists(queue))
+    }
+
+    /// Judged by the read-back, not lpadmin's exit status: the goal is that the queue is gone. A queue that
+    /// was already deleted (by another app, lpadmin, or a row the sidebar hadn't refreshed yet) makes
+    /// lpadmin fail with "The printer or class does not exist" — that's still a successful delete.
+    /// `message` is set on success only in that case ("already deleted").
+    static func deleteOutcome(queue: String, result: ToolResult, stillExists: Bool) -> ActionOutcome {
+        if stillExists {
+            let message = result.succeeded ? "Not applied: \(queue) still exists"
+                : result.message.isEmpty ? "exited \(result.status)" : result.message
+            return ActionOutcome(succeeded: false, command: result.commandLine, message: message)
         }
-        let stillThere = try await client.queueExists(queue)
-        return ActionOutcome(succeeded: !stillThere, command: result.commandLine,
-                             message: stillThere ? "Not applied: \(queue) still exists" : nil)
+        return ActionOutcome(succeeded: true, command: result.commandLine,
+                             message: result.succeeded ? nil : "\(queue) was already deleted")
     }
 
     /// Sends the CUPS test page (or a generated one-page PDF when it's missing). Returns the job id when verified.

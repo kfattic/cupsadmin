@@ -1,4 +1,4 @@
-import CupsKit
+@testable import CupsKit
 import Foundation
 import Testing
 
@@ -55,5 +55,47 @@ struct LiveQueueActions {
             let outcome = try await QueueActions.perform(action, queue: queue, client: client)
             #expect(outcome.succeeded, "\(action): \(outcome)")
         }
+    }
+}
+
+/// Delete is judged by whether the queue is gone afterwards, not by lpadmin's exit status.
+@Suite struct DeleteReadBack {
+    private func result(_ status: Int32, _ stderr: String = "") -> ToolResult {
+        ToolResult(executable: CupsTools.lpadminPath, arguments: ["-x", "Old_Queue"], status: status,
+                   standardOutput: Data(), standardError: Data(stderr.utf8))
+    }
+
+    @Test func deletedNormally() {
+        let outcome = QueueActions.deleteOutcome(queue: "Old_Queue", result: result(0), stillExists: false)
+        #expect(outcome == ActionOutcome(succeeded: true, command: "/usr/sbin/lpadmin -x Old_Queue", message: nil))
+    }
+
+    /// The reported bug: the queue was removed elsewhere before Delete Printer ran, lpadmin said
+    /// "The printer or class does not exist", and the app showed a failure alert.
+    @Test func alreadyGoneIsASuccess() {
+        let outcome = QueueActions.deleteOutcome(queue: "Old_Queue",
+                                                 result: result(1, "lpadmin: The printer or class does not exist."),
+                                                 stillExists: false)
+        #expect(outcome.succeeded)
+        #expect(outcome.message == "Old_Queue was already deleted")
+    }
+
+    @Test func failureWhileQueueRemainsShowsToolOutput() {
+        let outcome = QueueActions.deleteOutcome(queue: "Old_Queue", result: result(1, "lpadmin: Forbidden"), stillExists: true)
+        #expect(!outcome.succeeded && outcome.message == "lpadmin: Forbidden")
+    }
+
+    @Test func exitZeroButStillThereIsNotApplied() {
+        let outcome = QueueActions.deleteOutcome(queue: "Old_Queue", result: result(0), stillExists: true)
+        #expect(!outcome.succeeded && outcome.message == "Not applied: Old_Queue still exists")
+    }
+
+    /// Opt-in (CUPSKIT_LIVE_DELETE=1): the real lpadmin and cupsd on a name that never existed. Writes nothing.
+    @Test(.enabled(if: ProcessInfo.processInfo.environment["CUPSKIT_LIVE_DELETE"] != nil))
+    func liveDeleteOfMissingQueue() async throws {
+        let name = "cupsadmin_missing_\(UInt32.random(in: 0 ... .max))"
+        let outcome = try await QueueActions.delete(queue: name, client: CupsClient())
+        #expect(outcome.succeeded, "\(outcome)")
+        #expect(outcome.message == "\(name) was already deleted")
     }
 }
