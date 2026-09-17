@@ -176,3 +176,25 @@ public struct PPD {
         options.first { $0.keyword == keyword }
     }
 }
+
+extension PPD {
+    /// Reads a PPD file, plain or gzip-compressed (vendors ship `.ppd.gz` / `.gz` under
+    /// /Library/Printers/PPDs). Text that isn't valid UTF-8 is read as ISO Latin-1, the PPD default.
+    public static func text(contentsOfFile path: String) throws -> String {
+        guard var data = FileManager.default.contents(atPath: path) else {
+            throw CupsAdminError.failed("can’t read \(path)")
+        }
+        if data.starts(with: [0x1F, 0x8B]) {
+            let result = try CupsTools.run("/usr/bin/gzip", ["-dc", path])
+            guard result.succeeded else { throw CupsAdminError.failed("can’t decompress \(path): \(result.message)") }
+            data = result.standardOutput
+        }
+        return String(data: data, encoding: .utf8) ?? String(data: data, encoding: .isoLatin1) ?? ""
+    }
+
+    /// True when a `ppdreport` argument names a PPD file rather than a queue. Queue names can't contain "/".
+    public static func looksLikeFile(_ argument: String) -> Bool {
+        argument.contains("/") || [".ppd", ".gz", ".ppd.gz"].contains { argument.lowercased().hasSuffix($0) }
+    }
+}
+

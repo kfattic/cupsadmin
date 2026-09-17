@@ -42,7 +42,7 @@ let usage = """
       quick                      list quick actions (task-named queue defaults)
       quick <action> <queue> [code | --clear]
                                  apply one via lpadmin, then verify
-      ppdreport <queue> | --file <path.ppd>
+      ppdreport <queue | path.ppd[.gz]>
                                  every PPD group and option: keyword, label, type, default, choices
       help                       show this help
     """
@@ -130,7 +130,12 @@ func runCommand(_ args: [String]) async throws -> String {
         }
         try rejectUnknownFlags()
         guard (file == nil && rest.count == 1) || (file != nil && rest.isEmpty) else {
-            throw CupsAdminError.usage("ppdreport needs one queue name or --file <path.ppd>")
+            throw CupsAdminError.usage("ppdreport needs one queue name or PPD file path")
+        }
+        // A path (anything with "/", or ending in .ppd / .gz) is a PPD file; queue names can't contain "/".
+        if file == nil, let argument = rest.first, PPD.looksLikeFile(argument) {
+            file = argument
+            rest.removeAll()
         }
         return try await PPDReportCommand.run(client: client, queue: rest.first, file: file)
 

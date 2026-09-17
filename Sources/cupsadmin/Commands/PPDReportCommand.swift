@@ -8,8 +8,7 @@ enum PPDReportCommand {
         let source: String
         var attributes: IPPGroup?
         if let file {
-            guard let data = FileManager.default.contents(atPath: file) else { throw CupsAdminError.failed("can’t read \(file)") }
-            text = String(decoding: data, as: UTF8.self)
+            text = try PPD.text(contentsOfFile: file)
             source = file
         } else if let queue {
             guard try await client.queueExists(queue) else { throw CupsAdminError.failed("no such queue \(queue)") }
